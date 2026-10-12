@@ -36,7 +36,7 @@ EC2-B (t3.large, batch y orquestación) y EC2-C (t3.medium, consumo). El diagram
 
 | Archivo | Descripción |
 |---|---|
-| `e1_fraudlens.pdf` | Documento del Entregable 1 (secciones 1 a 5, referencias y anexos A–C) |
+| `e1_fraudlens.pdf` | Documento del Entregable 1 (secciones 1 a 5, referencias y anexos A y B) |
 | `arquitectura.png` / `arquitectura.svg` | Diagrama de arquitectura por capas exportado |
 | `arquitectura.drawio` | Fuente editable del diagrama |
 | `enlace_drawio.txt` | Enlace editable en draw.io (el mismo de la Sección 3) |
