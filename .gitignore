@@ -1,0 +1,34 @@
+# Secretos y credenciales
+.env
+*.pem
+*.ppk
+.aws/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.ipynb_checkpoints/
+
+# Datos y artefactos locales
+data/
+logs/
+checkpoints/
+spark-warehouse/
+metastore_db/
+derby.log
+*.log
+
+# Sistema y editores
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# LaTeX
+*.aux
+*.fls
+*.fdb_latexmk
+*.out
+*.toc
