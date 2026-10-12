@@ -37,7 +37,7 @@ FraudLens/
 ├── api/                 ← API de alertas (FastAPI)
 ├── dashboards/          ← dashboards de Metabase y consultas de Athena
 └── docs/
-    ├── entregable1/     ← documento, diagrama (.drawio, PNG, SVG) y fuentes LaTeX
+    ├── entregable1/     ← documento (PDF y .tex), diagrama (.drawio, PNG, SVG) y enlace de draw.io
     ├── entregable2/     ← slides de la sustentación
     └── bitacora_ia.md   ← bitácora de delegación a agentes de IA (obligatoria)
 ```

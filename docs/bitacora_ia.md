@@ -11,5 +11,5 @@ Cada integrante agrega una fila por tarea en la que use un agente: qué delegó 
 | E1 | Despliegue en AWS Learner Lab (contenedores en EC2 y servicios por uso) y cambio de MongoDB a DynamoDB | Parcial | Propuestos por el agente tras revisar los laboratorios del curso y el límite de instancias del Learner Lab; el equipo los aprobó. |
 | E1 | Redacción de los ADR (Sección 4) | Parcial | El equipo definió contexto, alternativas y decisión; el agente ayudó a redactar y a citar los conceptos del curso. |
 | E1 | Plan de implementación (Sección 5) | Parcial | Reparto de bloques acordado por el equipo; el agente redactó el cronograma y la tabla de riesgos. |
-| E1 | Dibujo del diagrama en draw.io (notación AWS) y exportación | Sí | El agente generó el .drawio con los íconos oficiales de AWS a partir del diseño del equipo (`build_diagram.py`). Bajo valor pedagógico. |
+| E1 | Dibujo del diagrama en draw.io (notación AWS) y exportación | Sí | El agente generó el .drawio con los íconos oficiales de AWS a partir del diseño del equipo. Bajo valor pedagógico. |
 | E1 | Maquetación en LaTeX, referencias APA y anexos | Sí | Tarea de formato; bajo valor pedagógico. |
