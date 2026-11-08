@@ -1,0 +1,229 @@
+# FraudLens: pipeline completo en local. `docker compose up -d --build` y ver README.md.
+# MinIO hace de S3 y DynamoDB Local de DynamoDB; en AWS se cambian solo variables de entorno (ver README, sección AWS).
+name: fraudlens
+
+x-env: &env
+  AWS_REGION: ${AWS_REGION:-us-east-1}
+  AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+  AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  S3_BUCKET: ${S3_BUCKET:-fraudlens-lake}
+  S3_ENDPOINT: ${S3_ENDPOINT-http://minio:9000}
+  DYNAMODB_TABLE: ${DYNAMODB_TABLE:-alertas_fraude}
+  DYNAMODB_ENDPOINT: ${DYNAMODB_ENDPOINT-http://dynamodb:8000}
+  SNS_TOPIC_ARN: ${SNS_TOPIC_ARN:-}
+  KAFKA_BOOTSTRAP_SERVERS: kafka-1:29092,kafka-2:29092,kafka-3:29092
+  KAFKA_TOPIC: ${KAFKA_TOPIC:-transacciones}
+  KAFKA_DLQ_TOPIC: ${KAFKA_DLQ_TOPIC:-transacciones_dlq}
+  POSTGRES_HOST: postgres
+  POSTGRES_DB: ${POSTGRES_DB:-fraudlens}
+  POSTGRES_USER: ${POSTGRES_USER:-fraudlens}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env}
+  PII_HMAC_KEY: ${PII_HMAC_KEY:?define PII_HMAC_KEY en .env}
+  RULE_VERSION: ${RULE_VERSION:-v1}
+  SPARK_MASTER: ${SPARK_MASTER:-local[2]}
+  N_CLIENTES: ${N_CLIENTES:-20000}
+  N_COMERCIOS: ${N_COMERCIOS:-300}
+
+x-kafka: &kafka
+  image: confluentinc/cp-kafka:7.6.0
+  restart: unless-stopped
+  environment: &kafka-env
+    CLUSTER_ID: "MkU3OEVBNTcwNTJENDM2Qk"
+    KAFKA_PROCESS_ROLES: broker,controller
+    KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka-1:9093,2@kafka-2:9093,3@kafka-3:9093
+    KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+    KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,INTERNAL:PLAINTEXT,EXTERNAL:PLAINTEXT
+    KAFKA_INTER_BROKER_LISTENER_NAME: INTERNAL
+    KAFKA_DEFAULT_REPLICATION_FACTOR: 3
+    KAFKA_MIN_INSYNC_REPLICAS: 2            # con acks=all: tolera la caída de 1 broker sin perder datos
+    KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 3
+    KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 2
+    KAFKA_UNCLEAN_LEADER_ELECTION_ENABLE: "false"   # CP: antes indisponible que perder datos
+    KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    KAFKA_LOG_RETENTION_HOURS: 168
+  healthcheck:
+    test: ["CMD-SHELL", "kafka-broker-api-versions --bootstrap-server localhost:29092 >/dev/null 2>&1"]
+    interval: 10s
+    timeout: 10s
+    retries: 12
+    start_period: 20s
+
+services:
+  kafka-1:
+    <<: *kafka
+    hostname: kafka-1
+    ports: ["9092:9092"]
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 1
+      KAFKA_LISTENERS: CONTROLLER://:9093,INTERNAL://:29092,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-1:29092,EXTERNAL://localhost:9092
+    volumes: [kafka-1:/var/lib/kafka/data]
+  kafka-2:
+    <<: *kafka
+    hostname: kafka-2
+    ports: ["9094:9094"]
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 2
+      KAFKA_LISTENERS: CONTROLLER://:9093,INTERNAL://:29092,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-2:29092,EXTERNAL://localhost:9094
+    volumes: [kafka-2:/var/lib/kafka/data]
+  kafka-3:
+    <<: *kafka
+    hostname: kafka-3
+    ports: ["9095:9095"]
+    environment:
+      <<: *kafka-env
+      KAFKA_NODE_ID: 3
+      KAFKA_LISTENERS: CONTROLLER://:9093,INTERNAL://:29092,EXTERNAL://:9095
+      KAFKA_ADVERTISED_LISTENERS: INTERNAL://kafka-3:29092,EXTERNAL://localhost:9095
+    volumes: [kafka-3:/var/lib/kafka/data]
+
+  kafka-init:   # crea los topics y termina
+    image: confluentinc/cp-kafka:7.6.0
+    depends_on:
+      kafka-1: {condition: service_healthy}
+      kafka-2: {condition: service_healthy}
+      kafka-3: {condition: service_healthy}
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        kafka-topics --bootstrap-server kafka-1:29092 --create --if-not-exists --topic transacciones --partitions 12 --replication-factor 3 --config min.insync.replicas=2 --config retention.ms=604800000
+        kafka-topics --bootstrap-server kafka-1:29092 --create --if-not-exists --topic transacciones_dlq --partitions 3 --replication-factor 3 --config min.insync.replicas=2 --config retention.ms=2592000000
+        kafka-topics --bootstrap-server kafka-1:29092 --list
+    restart: "no"
+
+  minio:
+    # minio/minio ya no se publica en Docker Hub; se usa la imagen pública de Chainguard (cambiable con MINIO_IMAGE,
+    # p. ej. quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z).
+    image: ${MINIO_IMAGE:-cgr.dev/chainguard/minio:latest}
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [minio:/data]
+
+  dynamodb:
+    image: amazon/dynamodb-local:2.5.2
+    command: -jar DynamoDBLocal.jar -sharedDb -dbPath /data
+    user: root
+    ports: ["8000:8000"]
+    volumes: [dynamodb:/data]
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-fraudlens}
+      POSTGRES_USER: ${POSTGRES_USER:-fraudlens}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?define POSTGRES_PASSWORD en .env}
+    ports: ["5432:5432"]
+    volumes:
+      - postgres:/var/lib/postgresql/data
+      - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-fraudlens}"]
+      interval: 5s
+      retries: 12
+
+  setup:   # crea bucket, tabla de DynamoDB y siembra PostgreSQL + lista de riesgo v1 (idempotente)
+    build: {context: ., dockerfile: infra/docker/Dockerfile.spark}
+    image: fraudlens-spark
+    environment: *env
+    depends_on:
+      minio: {condition: service_started}
+      postgres: {condition: service_healthy}
+      dynamodb: {condition: service_started}
+    command:
+      - bash
+      - -c
+      - |
+        for i in $$(seq 1 30); do python infra/aws/crear_recursos.py --solo s3 dynamodb && break; sleep 3; done &&
+        python -m producer.catalogo --postgres --clientes $${N_CLIENTES:-20000} --comercios $${N_COMERCIOS:-300} &&
+        mkdir -p /tmp/lr && python -m producer.catalogo --clientes 0 --lista-riesgo 1 --destino /tmp/lr &&
+        python - <<'PY'
+        import os, boto3
+        s3 = boto3.client("s3", endpoint_url=os.environ["S3_ENDPOINT"], region_name=os.environ["AWS_REGION"])
+        s3.upload_file("/tmp/lr/riesgo_v001.csv", os.environ["S3_BUCKET"], "landing/listas_riesgo/riesgo_v001.csv")
+        print("lista de riesgo v1 en landing/listas_riesgo/")
+        PY
+    restart: "no"
+
+  streaming:   # RF-05 a RF-09: Kafka -> Bronze/Silver, R1/R2/R3, DynamoDB y SNS
+    image: fraudlens-spark
+    environment: *env
+    command: python -m streaming.job
+    depends_on:
+      setup: {condition: service_completed_successfully}
+      kafka-init: {condition: service_completed_successfully}
+    restart: unless-stopped
+    deploy: {resources: {limits: {memory: 3g}}}
+
+  api:   # RF-17: GET /alertas
+    build: {context: ., dockerfile: infra/docker/Dockerfile.api}
+    environment: *env
+    ports: ["8080:8000"]
+    depends_on:
+      setup: {condition: service_completed_successfully}
+    restart: unless-stopped
+
+  producer:   # generador de transacciones (perfil "demo": docker compose run --rm producer ...)
+    image: fraudlens-spark
+    environment: *env
+    profiles: ["demo"]
+    depends_on:
+      kafka-init: {condition: service_completed_successfully}
+    command: python -m producer.producer --rate 50 --duracion 120
+
+  airflow-init:
+    build: {context: ., dockerfile: infra/docker/Dockerfile.airflow}
+    image: fraudlens-airflow
+    environment: &airflow-env
+      <<: *env
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-fraudlens}:${POSTGRES_PASSWORD}@postgres/airflow
+      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_SECRET_KEY:-fraudlens-local-no-usar-en-produccion}
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/fraudlens/dags
+      FRAUDLENS_HOME: /opt/fraudlens
+    depends_on:
+      postgres: {condition: service_healthy}
+    command:
+      - bash
+      - -c
+      - |
+        airflow db migrate &&
+        airflow users create --username admin --password "$${AIRFLOW_ADMIN_PASSWORD:-admin}" --firstname Fraud --lastname Lens --role Admin --email admin@fraudlens.local || true
+    restart: "no"
+
+  airflow-webserver:
+    image: fraudlens-airflow
+    environment: *airflow-env
+    command: airflow webserver
+    ports: ["8081:8080"]
+    volumes: ["./:/opt/fraudlens"]
+    depends_on:
+      airflow-init: {condition: service_completed_successfully}
+    restart: unless-stopped
+
+  airflow-scheduler:
+    image: fraudlens-airflow
+    environment: *airflow-env
+    command: airflow scheduler
+    volumes: ["./:/opt/fraudlens"]
+    depends_on:
+      airflow-init: {condition: service_completed_successfully}
+      setup: {condition: service_completed_successfully}
+    restart: unless-stopped
+    deploy: {resources: {limits: {memory: 4g}}}
+
+volumes:
+  kafka-1:
+  kafka-2:
+  kafka-3:
+  minio:
+  dynamodb:
+  postgres:

@@ -1,0 +1,23 @@
+# Imagen para el streaming, los jobs batch y los scripts: Spark 3.5.1 + Delta 3.1.0 + S3A + Kafka + JDBC.
+FROM python:3.11-slim-bookworm
+RUN apt-get update && apt-get install -y --no-install-recommends openjdk-17-jre-headless curl ca-certificates procps \
+    && rm -rf /var/lib/apt/lists/*
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 TZ=UTC PYTHONUNBUFFERED=1
+COPY infra/docker/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+# Jars que PySpark no trae: se copian a $SPARK_HOME/jars (así no se resuelven con Ivy en cada arranque).
+RUN set -eux; M=https://repo1.maven.org/maven2; J=$(python -c "import pyspark,os;print(os.path.join(os.path.dirname(pyspark.__file__),'jars'))"); \
+    for f in \
+      io/delta/delta-spark_2.12/3.1.0/delta-spark_2.12-3.1.0.jar \
+      io/delta/delta-storage/3.1.0/delta-storage-3.1.0.jar \
+      org/apache/spark/spark-sql-kafka-0-10_2.12/3.5.1/spark-sql-kafka-0-10_2.12-3.5.1.jar \
+      org/apache/spark/spark-token-provider-kafka-0-10_2.12/3.5.1/spark-token-provider-kafka-0-10_2.12-3.5.1.jar \
+      org/apache/kafka/kafka-clients/3.4.1/kafka-clients-3.4.1.jar \
+      org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar \
+      org/apache/hadoop/hadoop-aws/3.3.4/hadoop-aws-3.3.4.jar \
+      com/amazonaws/aws-java-sdk-bundle/1.12.262/aws-java-sdk-bundle-1.12.262.jar \
+      org/postgresql/postgresql/42.7.3/postgresql-42.7.3.jar ; do \
+        curl -fsSL --retry 12 --retry-delay 15 --retry-all-errors -o "$J/$(basename $f)" "$M/$f"; done; sleep 1
+WORKDIR /opt/fraudlens
+COPY . /opt/fraudlens
+ENV PYTHONPATH=/opt/fraudlens
