@@ -1,0 +1,6 @@
+.git
+.env
+spark-warehouse
+**/__pycache__
+docs
+tests

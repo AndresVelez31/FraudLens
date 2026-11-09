@@ -13,3 +13,9 @@ Cada integrante agrega una fila por tarea en la que use un agente: qué delegó 
 | E1 | Plan de implementación (Sección 5) | Parcial | Reparto de bloques acordado por el equipo; el agente redactó el cronograma y la tabla de riesgos. |
 | E1 | Dibujo del diagrama en draw.io (notación AWS) y exportación | Sí | El agente generó el .drawio con los íconos oficiales de AWS a partir del diseño del equipo. Bajo valor pedagógico. |
 | E1 | Maquetación en LaTeX, referencias APA y anexos | Sí | Tarea de formato; bajo valor pedagógico. |
+| E2 | Diseño de la implementación (reglas, idempotencia, DLQ/cuarentena, Gold en estrella) a partir del E1 | Parcial | El agente (Claude) propuso la estructura del código y las decisiones técnicas listadas en el README; el equipo debe poder explicar y defender cada una (ver `docs/entregable2/guia_defensa.md`). |
+| E2 | Código del productor, streaming (Kafka → Bronze/Silver, R1–R3, alertas), batch (catálogos, Gold, calidad, reproceso), DAG de Airflow y API | Sí | Escrito por el agente a partir de los requisitos del E1. Alto valor pedagógico: cada integrante debe revisarlo y entender al menos su bloque antes de la sustentación. |
+| E2 | docker-compose, Dockerfiles, `init.sql` y `.env.example` | Sí | Generados por el agente. Validados solo con `docker compose config`; el equipo debe levantarlos y corregir lo que falle. |
+| E2 | Pruebas (pytest y prueba end-to-end sin Docker con Kafka local, Spark y DynamoDB simulado) | Sí | El agente las escribió y las ejecutó; los resultados y límites están en el README (sección «Qué se probó y qué no»). |
+| E2 | README, esta bitácora, slides y guía de defensa | Sí | Redactados por el agente; el equipo debe revisarlos y ajustarlos a lo que realmente ejecute en la demo. |
+| E2 | Revisión del código, ejecución de la demo en el Learner Lab, medición de latencia y apertura del PR | No | Pendiente del equipo. Completar aquí quién revisó qué y qué se cambió. |
