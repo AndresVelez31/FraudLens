@@ -14,6 +14,10 @@ from pyspark.sql import functions as F
 RULES = {
     "v1": {"r1_max_tx": 5, "r1_max_monto": 2_000_000, "r2_factor": 3.0, "r2_dias": 30},
     "v2": {"r1_max_tx": 4, "r1_max_monto": 1_500_000, "r2_factor": 2.5, "r2_dias": 30},
+    # Calibrada con IEEE-CIS (tarea D2): máximo F1 en la partición de entrenamiento con a lo sumo 50 alertas por cada
+    # 1.000 transacciones. R1 = 3 o más transacciones del cliente en 5 min; el umbral de monto no mejoró el resultado,
+    # por eso queda desactivado (valor inalcanzable). Detalle en docs/evaluacion/calibracion.json.
+    "ieee": {"r1_max_tx": 2, "r1_max_monto": 10**12, "r2_factor": 1.5, "r2_dias": 30},
 }
 
 # Contenido de dim_regla en Gold.
