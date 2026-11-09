@@ -14,16 +14,17 @@ import sys
 import boto3
 from botocore.exceptions import ClientError
 
-REGION = os.environ.get("AWS_REGION", "us-east-1")
-BUCKET = os.environ.get("S3_BUCKET", "fraudlens-lake")
-TABLA = os.environ.get("DYNAMODB_TABLE", "alertas_fraude")
-GLUE_DB = os.environ.get("GLUE_DATABASE", "fraudlens")
-WORKGROUP = os.environ.get("ATHENA_WORKGROUP", "fraudlens")
-PREFIJOS = ["landing/", "bronze/", "silver/", "gold/", "checkpoints/", "athena-results/"]
+REGION = os.environ.get("AWS_REGION") or "us-east-2"
+BUCKET = os.environ.get("S3_BUCKET") or "fraudlens-lake"
+TABLA = os.environ.get("DYNAMODB_TABLE") or "alertas_fraude"
+GLUE_DB = os.environ.get("GLUE_DATABASE") or "fraudlens"
+WORKGROUP = os.environ.get("ATHENA_WORKGROUP") or "fraudlens"
+PREFIJOS = ["raw/", "landing/", "bronze/", "silver/", "gold/", "models/", "checkpoints/", "athena-results/", "_estado/"]
 
 
 def cliente(servicio, endpoint=None):
-    return boto3.client(servicio, region_name=REGION, endpoint_url=endpoint)
+    # Una variable de endpoint vacía (modo AWS) significa "usar el endpoint real de AWS".
+    return boto3.client(servicio, region_name=REGION, endpoint_url=endpoint or None)
 
 
 def crear_s3():

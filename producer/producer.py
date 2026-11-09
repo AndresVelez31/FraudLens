@@ -96,8 +96,11 @@ class Generador:
 
     def r2(self):
         evs, verdad = [], []
+        # Sufijo por corrida: el dispositivo es nuevo cada vez, así el escenario se puede repetir en el mismo ambiente
+        # (si no, a partir de la segunda corrida Gold ya lo conoce y R2 no dispara).
+        corrida = uuid.uuid4().hex[:6]
         for i in self.actores_r2():
-            e = self.evento(i, dispositivo="DNUEVO-%07d" % i, monto=float(6 * cat.monto_medio(i)))
+            e = self.evento(i, dispositivo="DNUEVO-%07d-%s" % (i, corrida), monto=float(6 * cat.monto_medio(i)))
             evs.append(e)
             verdad.append(e["id_transaccion"])
         return evs, {"escenario": "r2", "ids": verdad}

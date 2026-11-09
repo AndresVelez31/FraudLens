@@ -1,0 +1,3 @@
+# Los scripts de shell siempre con fin de línea LF, aunque se clonen en Windows
+# (el user data de la EC2 falla si llega con CRLF).
+*.sh text eol=lf

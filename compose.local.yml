@@ -1,0 +1,66 @@
+# Ambiente local: se suma a docker-compose.yml y reemplaza los servicios de AWS por equivalentes locales.
+#
+#   docker compose -f docker-compose.yml -f compose.local.yml --profile streaming --profile batch up -d --build
+#
+# MinIO hace de S3 y DynamoDB Local de DynamoDB. Las llaves de abajo son solo para estos dos contenedores;
+# en AWS no se usa este archivo y las credenciales vienen del rol de la EC2.
+
+x-local-env: &local-env
+  AWS_REGION: us-east-1                     # MinIO y DynamoDB Local trabajan con la región por defecto
+  AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minioadmin}
+  AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+  S3_ENDPOINT: http://minio:9000
+  DYNAMODB_ENDPOINT: http://dynamodb:8000
+  SNS_TOPIC_ARN: ""                         # en local no se envían correos reales: la alerta solo queda en el log
+
+services:
+  minio:
+    # MinIO ya no publica imágenes en Docker Hub ni en quay.io; la de Chainguard solo tiene la etiqueta "latest",
+    # así que se fija por digest para que siempre baje la misma versión (consultada el 9 nov 2026).
+    image: ${MINIO_IMAGE:-cgr.dev/chainguard/minio@sha256:616286de6ef3a1892876b126e745e152d8e03add6357203f8a1f854bdd1dce76}
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports: ["9000:9000", "9001:9001"]
+    volumes: [minio:/data]
+
+  dynamodb:
+    image: amazon/dynamodb-local:2.5.2
+    command: -jar DynamoDBLocal.jar -sharedDb -dbPath /data
+    user: root
+    ports: ["8000:8000"]
+    volumes: [dynamodb:/data]
+
+  # Mismos servicios de docker-compose.yml, apuntando a MinIO y DynamoDB Local.
+  setup:
+    environment: *local-env
+    depends_on:
+      minio: {condition: service_started}
+      dynamodb: {condition: service_started}
+
+  streaming:
+    environment: *local-env
+    depends_on:   # en local el bucket lo crea setup; en AWS ya existe
+      setup: {condition: service_completed_successfully}
+
+  producer:
+    environment: *local-env
+
+  api:
+    environment: *local-env
+    depends_on:
+      setup: {condition: service_completed_successfully}
+
+  airflow-init:
+    environment: *local-env
+
+  airflow-webserver:
+    environment: *local-env
+
+  airflow-scheduler:
+    environment: *local-env
+
+volumes:
+  minio:
+  dynamodb:
