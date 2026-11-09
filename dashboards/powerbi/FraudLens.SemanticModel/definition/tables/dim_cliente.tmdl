@@ -1,0 +1,114 @@
+table dim_cliente
+	lineageTag: c710f9c7-e029-4ecb-b643-6261a96ce21b
+
+	column id_cliente
+		dataType: string
+		lineageTag: 709f3d20-afdb-4ae8-9ab2-1ff5b882a616
+		summarizeBy: none
+		sourceColumn: id_cliente
+
+		annotation SummarizationSetBy = Automatic
+
+	column ciudad
+		dataType: string
+		lineageTag: fc57ee37-a43d-4d70-8357-e647667869c9
+		summarizeBy: none
+		sourceColumn: ciudad
+
+		annotation SummarizationSetBy = Automatic
+
+	column segmento
+		dataType: string
+		lineageTag: f318a8f3-c044-4668-bfdc-2be7b1411af4
+		summarizeBy: none
+		sourceColumn: segmento
+
+		annotation SummarizationSetBy = Automatic
+
+	column fecha_alta
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 5330e3d7-29ba-42e4-a080-ee6a18519bc6
+		summarizeBy: none
+		sourceColumn: fecha_alta
+
+		variation Variation
+			isDefault
+			relationship: cc39f456-26bd-45d7-9728-55701e962c17
+			defaultHierarchy: LocalDateTable_fc8b5a17-bf0e-444f-9739-365264a286ac.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column hash_atributos
+		dataType: string
+		lineageTag: 1b7dcc01-73f7-44e7-a7d0-b9c285af7c39
+		summarizeBy: none
+		sourceColumn: hash_atributos
+
+		annotation SummarizationSetBy = Automatic
+
+	column valid_from
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 7ea8fd24-1608-46ca-bb96-da853a1e53a6
+		summarizeBy: none
+		sourceColumn: valid_from
+
+		variation Variation
+			isDefault
+			relationship: 3200b391-4810-40af-8ca7-66e1051f0b07
+			defaultHierarchy: LocalDateTable_96ed95df-ecf9-4723-aa43-d90ffb3d3fea.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column valid_to
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: f48915c0-473d-4f09-a1d3-60d053abb6de
+		summarizeBy: none
+		sourceColumn: valid_to
+
+		variation Variation
+			isDefault
+			relationship: 521cab0b-f482-4cb3-bcea-c70e642dfa42
+			defaultHierarchy: LocalDateTable_f619846f-f648-4424-b3ae-651bd5c3616b.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column es_actual
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: a67f7bcb-2b18-4070-b539-0bcc3f8bef74
+		summarizeBy: none
+		sourceColumn: es_actual
+
+		annotation SummarizationSetBy = Automatic
+
+	column sk_cliente
+		dataType: string
+		lineageTag: 73207421-53f9-49f6-b548-167ab3c30255
+		summarizeBy: none
+		sourceColumn: sk_cliente
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_cliente = m
+		mode: import
+		source =
+				let
+				    Source = Odbc.DataSource("Driver={Amazon Athena ODBC (x64)};AwsRegion=us-east-2;Catalog=AwsDataCatalog;Schema=fraudlens;Workgroup=fraudlens;S3OutputLocation=s3://fraudlens-lake-216408407230/athena-results/;S3OutputEncOption=SSE_S3;AuthenticationType=IAM Profile;AWSProfile=powerbi-athena", [HierarchicalNavigation=true]),
+				    AwsDataCatalog_Database = Source{[Name="AwsDataCatalog",Kind="Database"]}[Data],
+				    fraudlens_Schema = AwsDataCatalog_Database{[Name="fraudlens",Kind="Schema"]}[Data],
+				    dim_cliente_Table = fraudlens_Schema{[Name="dim_cliente",Kind="Table"]}[Data],
+				  #"Solo clientes vigentes" = Table.SelectRows(dim_cliente_Table, each [es_actual] = true)
+				in
+				    #"Solo clientes vigentes"
+
+	annotation PBI_ResultType = Table
+

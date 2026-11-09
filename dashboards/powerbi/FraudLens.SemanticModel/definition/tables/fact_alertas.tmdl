@@ -1,0 +1,233 @@
+table fact_alertas
+	lineageTag: 80de0b42-d159-46e7-99bf-23ebe18fbd20
+
+	measure Alertas = COUNTROWS(fact_alertas)
+		formatString: 0
+		lineageTag: ceb1043f-838d-41d3-8de2-cb41db1a3ccf
+
+	measure 'Latencia promedio (s)' = AVERAGE(fact_alertas[latencia_s])
+		formatString: 0.00
+		lineageTag: 179173c5-bcf8-4f83-bb36-d2da9d018fc6
+
+	measure 'Latencia P95 (s)' = PERCENTILE.INC(fact_alertas[latencia_s], 0.95)
+		formatString: 0.00
+		lineageTag: 9949e84a-4270-499e-ab01-0ee0825e73c7
+
+	column id_alerta
+		dataType: string
+		lineageTag: ea8ca064-3f31-4e9f-be40-bf9282e56487
+		summarizeBy: none
+		sourceColumn: id_alerta
+
+		annotation SummarizationSetBy = Automatic
+
+	column rule_version
+		dataType: string
+		lineageTag: 7ba20aac-3408-4d99-99c7-00b23b76f616
+		summarizeBy: none
+		sourceColumn: rule_version
+
+		annotation SummarizationSetBy = Automatic
+
+	column id_regla
+		dataType: string
+		lineageTag: d200dfc2-d18b-4141-913f-5ac32bcfd644
+		summarizeBy: none
+		sourceColumn: id_regla
+
+		annotation SummarizationSetBy = Automatic
+
+	column id_transaccion
+		dataType: string
+		lineageTag: 4e89b3e8-0962-4de6-8c6b-fce7afbfc258
+		summarizeBy: none
+		sourceColumn: id_transaccion
+
+		annotation SummarizationSetBy = Automatic
+
+	column id_cliente
+		dataType: string
+		lineageTag: 76e576bc-ae52-4455-a395-8c8048183ac1
+		summarizeBy: none
+		sourceColumn: id_cliente
+
+		annotation SummarizationSetBy = Automatic
+
+	column id_comercio
+		dataType: string
+		lineageTag: 670a2eb6-1cd6-4710-8461-c4edda3664be
+		summarizeBy: none
+		sourceColumn: id_comercio
+
+		annotation SummarizationSetBy = Automatic
+
+	column ts_evento
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: ff346570-72e0-4dbf-a5d3-5f17f99194b3
+		summarizeBy: none
+		sourceColumn: ts_evento
+
+		variation Variation
+			isDefault
+			relationship: f9c6088b-2fa9-4b54-abf1-4ab8e10ec698
+			defaultHierarchy: LocalDateTable_56c66415-2275-4386-8f79-5834bc01af8c.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column ts_alerta
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: ace9602c-059b-44bc-8f74-fb448d6ed9a7
+		summarizeBy: none
+		sourceColumn: ts_alerta
+
+		variation Variation
+			isDefault
+			relationship: 956830fb-e6bc-4b50-a23f-fefbfb71fc23
+			defaultHierarchy: LocalDateTable_76b13e51-c53a-45a2-9bc4-965a6fd6a975.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column ventana_inicio
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 9ac74740-486b-4536-88ef-c589193fa95e
+		summarizeBy: none
+		sourceColumn: ventana_inicio
+
+		variation Variation
+			isDefault
+			relationship: 55b6f60c-3b33-40ce-bd72-72a4a96e3a05
+			defaultHierarchy: LocalDateTable_3ea7d487-75ae-4bc4-b793-4eb84cf3013b.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column ventana_fin
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: e05d2565-9068-4b99-9806-04967ddda77a
+		summarizeBy: none
+		sourceColumn: ventana_fin
+
+		variation Variation
+			isDefault
+			relationship: e66d4ae0-3d8d-4b49-be14-79b2aead06b2
+			defaultHierarchy: LocalDateTable_c59ad155-16ac-4bae-b675-3231147d0845.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column n_tx
+		dataType: int64
+		formatString: 0
+		lineageTag: 4eb52200-fbe0-40b4-8e69-1b5bca68da2b
+		summarizeBy: sum
+		sourceColumn: n_tx
+
+		annotation SummarizationSetBy = Automatic
+
+	column monto_total
+		dataType: double
+		lineageTag: 9b5d6e53-7c52-47d3-b3b3-1c3272e395e7
+		summarizeBy: sum
+		sourceColumn: monto_total
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column latencia_s
+		dataType: double
+		lineageTag: c2021b34-e739-4e26-9008-6d7fbfd857ae
+		summarizeBy: sum
+		sourceColumn: latencia_s
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column origen
+		dataType: string
+		lineageTag: 000e9329-e742-4644-9766-1cfdcdbfc6b6
+		summarizeBy: none
+		sourceColumn: origen
+
+		annotation SummarizationSetBy = Automatic
+
+	column source_system
+		dataType: string
+		lineageTag: 5b4eff40-9a43-4dc5-8e8c-7ba84d77d1f9
+		summarizeBy: none
+		sourceColumn: source_system
+
+		annotation SummarizationSetBy = Automatic
+
+	column kafka_partition
+		dataType: int64
+		formatString: 0
+		lineageTag: 08ede317-4224-4258-a688-b99961aecb30
+		summarizeBy: sum
+		sourceColumn: kafka_partition
+
+		annotation SummarizationSetBy = Automatic
+
+	column kafka_offset
+		dataType: int64
+		formatString: 0
+		lineageTag: b8c48c31-d91e-4f10-99ea-019207ae0041
+		summarizeBy: sum
+		sourceColumn: kafka_offset
+
+		annotation SummarizationSetBy = Automatic
+
+	column batch_id
+		dataType: string
+		lineageTag: 5dc38ab6-184a-43bf-8650-145647274189
+		summarizeBy: none
+		sourceColumn: batch_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column ingest_ts
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 60c914b7-2ec0-45f1-9365-954d9203af81
+		summarizeBy: none
+		sourceColumn: ingest_ts
+
+		variation Variation
+			isDefault
+			relationship: 74fdc105-28c0-4f43-9653-86e14c8b445e
+			defaultHierarchy: LocalDateTable_c3bee3ff-bf97-44da-8cf1-11729b8ad124.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column fecha
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: c53dc13b-697b-491b-9e3c-826948538c95
+		summarizeBy: none
+		sourceColumn: fecha
+
+		variation Variation
+			isDefault
+			relationship: 6d56d39b-928e-4361-86f7-d68585de5ddd
+			defaultHierarchy: LocalDateTable_f2272b99-ff98-4fa8-bd9a-473855958c37.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	partition fact_alertas = m
+		mode: import
+		source =
+				let
+				    Source = Odbc.DataSource("Driver={Amazon Athena ODBC (x64)};AwsRegion=us-east-2;Catalog=AwsDataCatalog;Schema=fraudlens;Workgroup=fraudlens;S3OutputLocation=s3://fraudlens-lake-216408407230/athena-results/;S3OutputEncOption=SSE_S3;AuthenticationType=IAM Profile;AWSProfile=powerbi-athena", [HierarchicalNavigation=true]),
+				    AwsDataCatalog_Database = Source{[Name="AwsDataCatalog",Kind="Database"]}[Data],
+				    fraudlens_Schema = AwsDataCatalog_Database{[Name="fraudlens",Kind="Schema"]}[Data],
+				    fact_alertas_Table = fraudlens_Schema{[Name="fact_alertas",Kind="Table"]}[Data]
+				in
+				    fact_alertas_Table
+
+	annotation PBI_ResultType = Table
+

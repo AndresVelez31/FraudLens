@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "FraudLens"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "20e81e0c-55cb-43d4-b52a-999e0b3488be"
+  }
+}

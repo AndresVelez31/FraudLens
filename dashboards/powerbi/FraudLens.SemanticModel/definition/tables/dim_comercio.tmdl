@@ -1,0 +1,48 @@
+table dim_comercio
+	lineageTag: 7cad8332-2394-4728-978d-55ba3910669c
+
+	column id_comercio
+		dataType: string
+		lineageTag: 65de1f0e-922e-4ec9-8adb-6bde0003b90f
+		summarizeBy: none
+		sourceColumn: id_comercio
+
+		annotation SummarizationSetBy = Automatic
+
+	column nombre
+		dataType: string
+		lineageTag: 3f6dd402-5c38-4a85-9b81-36e9076b403b
+		summarizeBy: none
+		sourceColumn: nombre
+
+		annotation SummarizationSetBy = Automatic
+
+	column ciudad
+		dataType: string
+		lineageTag: d47c1e4e-a9b5-4985-9976-cf16a6f7a822
+		summarizeBy: none
+		sourceColumn: ciudad
+
+		annotation SummarizationSetBy = Automatic
+
+	column categoria
+		dataType: string
+		lineageTag: 4e498d20-146b-4392-a380-6f1bd34ab230
+		summarizeBy: none
+		sourceColumn: categoria
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_comercio = m
+		mode: import
+		source =
+				let
+				    Source = Odbc.DataSource("Driver={Amazon Athena ODBC (x64)};AwsRegion=us-east-2;Catalog=AwsDataCatalog;Schema=fraudlens;Workgroup=fraudlens;S3OutputLocation=s3://fraudlens-lake-216408407230/athena-results/;S3OutputEncOption=SSE_S3;AuthenticationType=IAM Profile;AWSProfile=powerbi-athena", [HierarchicalNavigation=true]),
+				    AwsDataCatalog_Database = Source{[Name="AwsDataCatalog",Kind="Database"]}[Data],
+				    fraudlens_Schema = AwsDataCatalog_Database{[Name="fraudlens",Kind="Schema"]}[Data],
+				    dim_comercio_Table = fraudlens_Schema{[Name="dim_comercio",Kind="Table"]}[Data]
+				in
+				    dim_comercio_Table
+
+	annotation PBI_ResultType = Table
+

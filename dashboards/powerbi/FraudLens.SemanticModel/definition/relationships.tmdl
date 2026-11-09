@@ -1,0 +1,89 @@
+relationship 2ad11bd8-3bbd-44c2-835d-4a3925adab27
+	joinOnDateBehavior: datePartOnly
+	fromColumn: fact_transacciones.ts_evento
+	toColumn: LocalDateTable_d7193d9c-80dc-4105-9a0e-2a8fc17a24a6.Date
+
+relationship 20483475-dd13-4b51-999c-83ba6e3624e2
+	joinOnDateBehavior: datePartOnly
+	fromColumn: fact_transacciones.ingest_ts
+	toColumn: LocalDateTable_70afb578-a0d3-4774-9892-43de66710c54.Date
+
+relationship 3092a990-3e2e-4b88-8f4e-7f0ca7c6eb56
+	joinOnDateBehavior: datePartOnly
+	fromColumn: fact_transacciones.fecha
+	toColumn: LocalDateTable_90f7ef9c-df15-44c1-86d6-bf1f4f8f54c4.Date
+
+relationship f9c6088b-2fa9-4b54-abf1-4ab8e10ec698
+	joinOnDateBehavior: datePartOnly
+	fromColumn: fact_alertas.ts_evento
+	toColumn: LocalDateTable_56c66415-2275-4386-8f79-5834bc01af8c.Date
+
+relationship 956830fb-e6bc-4b50-a23f-fefbfb71fc23
+	joinOnDateBehavior: datePartOnly
+	fromColumn: fact_alertas.ts_alerta
+	toColumn: LocalDateTable_76b13e51-c53a-45a2-9bc4-965a6fd6a975.Date
+
+relationship 55b6f60c-3b33-40ce-bd72-72a4a96e3a05
+	joinOnDateBehavior: datePartOnly
+	fromColumn: fact_alertas.ventana_inicio
+	toColumn: LocalDateTable_3ea7d487-75ae-4bc4-b793-4eb84cf3013b.Date
+
+relationship e66d4ae0-3d8d-4b49-be14-79b2aead06b2
+	joinOnDateBehavior: datePartOnly
+	fromColumn: fact_alertas.ventana_fin
+	toColumn: LocalDateTable_c59ad155-16ac-4bae-b675-3231147d0845.Date
+
+relationship 74fdc105-28c0-4f43-9653-86e14c8b445e
+	joinOnDateBehavior: datePartOnly
+	fromColumn: fact_alertas.ingest_ts
+	toColumn: LocalDateTable_c3bee3ff-bf97-44da-8cf1-11729b8ad124.Date
+
+relationship 6d56d39b-928e-4361-86f7-d68585de5ddd
+	joinOnDateBehavior: datePartOnly
+	fromColumn: fact_alertas.fecha
+	toColumn: LocalDateTable_f2272b99-ff98-4fa8-bd9a-473855958c37.Date
+
+relationship 9650ebf7-462d-44b2-82dd-99ef09e54f86
+	joinOnDateBehavior: datePartOnly
+	fromColumn: dim_tiempo.fecha
+	toColumn: LocalDateTable_b5420504-fb8d-4910-9571-ce090975a61a.Date
+
+relationship cc39f456-26bd-45d7-9728-55701e962c17
+	joinOnDateBehavior: datePartOnly
+	fromColumn: dim_cliente.fecha_alta
+	toColumn: LocalDateTable_fc8b5a17-bf0e-444f-9739-365264a286ac.Date
+
+relationship 3200b391-4810-40af-8ca7-66e1051f0b07
+	joinOnDateBehavior: datePartOnly
+	fromColumn: dim_cliente.valid_from
+	toColumn: LocalDateTable_96ed95df-ecf9-4723-aa43-d90ffb3d3fea.Date
+
+relationship 521cab0b-f482-4cb3-bcea-c70e642dfa42
+	joinOnDateBehavior: datePartOnly
+	fromColumn: dim_cliente.valid_to
+	toColumn: LocalDateTable_f619846f-f648-4424-b3ae-651bd5c3616b.Date
+
+relationship AutoDetected_1f282bea-5109-4e6d-9fe0-4c9a6ab2837a
+	fromColumn: fact_transacciones.id_cliente
+	toColumn: dim_cliente.id_cliente
+
+relationship AutoDetected_cf781014-7a0d-4376-8a86-4593373363f9
+	fromColumn: fact_alertas.id_cliente
+	toColumn: dim_cliente.id_cliente
+
+relationship AutoDetected_e99ff7bd-b23b-428c-8ba5-88f651613558
+	fromColumn: fact_transacciones.id_comercio
+	toColumn: dim_comercio.id_comercio
+
+relationship AutoDetected_e6d3f06b-9111-46f3-b42f-bb1fe2d86932
+	fromColumn: fact_alertas.id_comercio
+	toColumn: dim_comercio.id_comercio
+
+relationship AutoDetected_fe453c3e-e01a-4e09-b774-b642e11f4e6f
+	fromColumn: fact_transacciones.id_tiempo
+	toColumn: dim_tiempo.id_tiempo
+
+relationship AutoDetected_602128a2-2488-415b-b5e8-a5bb0af0c9a1
+	fromColumn: fact_alertas.id_regla
+	toColumn: dim_regla.id_regla
+

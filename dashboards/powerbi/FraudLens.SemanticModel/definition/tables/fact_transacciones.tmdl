@@ -1,0 +1,188 @@
+table fact_transacciones
+	lineageTag: 36233746-1d39-43b8-85bf-23b6c80d09a6
+
+	measure Transacciones = COUNTROWS(fact_transacciones)
+		formatString: 0
+		lineageTag: a79390c7-1bdd-4d1a-9760-b374ea3c1566
+
+	measure Sospechosas = CALCULATE([Transacciones], fact_transacciones[es_sospechosa] = TRUE())
+		formatString: 0
+		lineageTag: f921a437-f852-4e98-ad79-a065519c80ca
+
+	measure '% fraude (transacciones)' = DIVIDE([Sospechosas], [Transacciones])
+		formatString: 0.00\ %;-0.00\ %;0.00\ %
+		lineageTag: aaaa9f0c-d68c-410c-8ddf-8e4a17f1d580
+
+	measure 'Monto sospechoso' = CALCULATE(SUM(fact_transacciones[monto]), fact_transacciones[es_sospechosa] = TRUE())
+		lineageTag: 5491e09d-8242-4c5b-aeeb-6ea7f160330e
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure '% fraude (monto)' = DIVIDE([Monto sospechoso], SUM(fact_transacciones[monto]))
+		formatString: 0.00\ %;-0.00\ %;0.00\ %
+		lineageTag: 7c75d1e4-d2de-4d98-b266-ee450ff7434b
+
+	/// P6: monto sospechoso solo para los 10 comercios con más monto sospechoso (en empate pueden aparecer más de 10)
+	measure 'Monto sospechoso (top 10)' = IF( [Monto sospechoso] > 0 && RANKX( ALL( dim_comercio[nombre] ), [Monto sospechoso], , DESC ) <= 10, [Monto sospechoso] )
+		formatString: #,0
+		lineageTag: 582b466b-9b03-4567-b5dc-e89d75273ff4
+
+	column id_transaccion
+		dataType: string
+		lineageTag: 54f20e4d-2820-4636-8f2f-40233355bfa6
+		summarizeBy: none
+		sourceColumn: id_transaccion
+
+		annotation SummarizationSetBy = Automatic
+
+	column id_cliente
+		dataType: string
+		lineageTag: 21412837-34bf-4a0e-8c04-6b39bf083c93
+		summarizeBy: none
+		sourceColumn: id_cliente
+
+		annotation SummarizationSetBy = Automatic
+
+	column id_comercio
+		dataType: string
+		lineageTag: ec67cca3-76a5-4ddf-b9d2-fb94557325a6
+		summarizeBy: none
+		sourceColumn: id_comercio
+
+		annotation SummarizationSetBy = Automatic
+
+	column id_dispositivo
+		dataType: string
+		lineageTag: dd0ea157-0de9-412d-bb6c-c2f5c02e2eab
+		summarizeBy: none
+		sourceColumn: id_dispositivo
+
+		annotation SummarizationSetBy = Automatic
+
+	column id_tiempo
+		dataType: int64
+		formatString: 0
+		lineageTag: 9f34ec9e-ccd2-4906-b947-08b41bffdf5e
+		summarizeBy: none
+		sourceColumn: id_tiempo
+
+		annotation SummarizationSetBy = Automatic
+
+	column ts_evento
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 8d3311e4-7e63-40cf-a793-b81b8366da55
+		summarizeBy: none
+		sourceColumn: ts_evento
+
+		variation Variation
+			isDefault
+			relationship: 2ad11bd8-3bbd-44c2-835d-4a3925adab27
+			defaultHierarchy: LocalDateTable_d7193d9c-80dc-4105-9a0e-2a8fc17a24a6.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column monto
+		dataType: double
+		lineageTag: 073ef4b9-e2ff-498d-a8c3-2208077b52e0
+		summarizeBy: sum
+		sourceColumn: monto
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column tipo
+		dataType: string
+		lineageTag: bc53378c-e2d8-4cf2-aa3a-c8146dbe6aa0
+		summarizeBy: none
+		sourceColumn: tipo
+
+		annotation SummarizationSetBy = Automatic
+
+	column es_sospechosa
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: f92f35a7-afb0-4ca1-90ff-ac906e3f7b05
+		summarizeBy: none
+		sourceColumn: es_sospechosa
+
+		annotation SummarizationSetBy = Automatic
+
+	column source_system
+		dataType: string
+		lineageTag: b093a14e-ff99-4329-9f88-893a77451a78
+		summarizeBy: none
+		sourceColumn: source_system
+
+		annotation SummarizationSetBy = Automatic
+
+	column kafka_partition
+		dataType: int64
+		formatString: 0
+		lineageTag: 0f5d2c16-bdb7-47f0-84cf-73b239fcde42
+		summarizeBy: sum
+		sourceColumn: kafka_partition
+
+		annotation SummarizationSetBy = Automatic
+
+	column kafka_offset
+		dataType: int64
+		formatString: 0
+		lineageTag: e7f7849b-6026-4ff8-9b8a-6b5f9928693f
+		summarizeBy: sum
+		sourceColumn: kafka_offset
+
+		annotation SummarizationSetBy = Automatic
+
+	column ingest_ts
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: fef5eb43-0f05-4147-9aa9-f4e4ec29d72a
+		summarizeBy: none
+		sourceColumn: ingest_ts
+
+		variation Variation
+			isDefault
+			relationship: 20483475-dd13-4b51-999c-83ba6e3624e2
+			defaultHierarchy: LocalDateTable_70afb578-a0d3-4774-9892-43de66710c54.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+	column batch_id
+		dataType: string
+		lineageTag: 3576f6e3-58cd-4d2d-8445-bc51695d035e
+		summarizeBy: none
+		sourceColumn: batch_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column fecha
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 6cf03588-40d4-4613-94d3-16287e413e64
+		summarizeBy: none
+		sourceColumn: fecha
+
+		variation Variation
+			isDefault
+			relationship: 3092a990-3e2e-4b88-8f4e-7f0ca7c6eb56
+			defaultHierarchy: LocalDateTable_90f7ef9c-df15-44c1-86d6-bf1f4f8f54c4.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	partition fact_transacciones = m
+		mode: import
+		source =
+				let
+				    Source = Odbc.DataSource("Driver={Amazon Athena ODBC (x64)};AwsRegion=us-east-2;Catalog=AwsDataCatalog;Schema=fraudlens;Workgroup=fraudlens;S3OutputLocation=s3://fraudlens-lake-216408407230/athena-results/;S3OutputEncOption=SSE_S3;AuthenticationType=IAM Profile;AWSProfile=powerbi-athena", [HierarchicalNavigation=true]),
+				    AwsDataCatalog_Database = Source{[Name="AwsDataCatalog",Kind="Database"]}[Data],
+				    fraudlens_Schema = AwsDataCatalog_Database{[Name="fraudlens",Kind="Schema"]}[Data],
+				    fact_transacciones_Table = fraudlens_Schema{[Name="fact_transacciones",Kind="Table"]}[Data]
+				in
+				    fact_transacciones_Table
+
+	annotation PBI_ResultType = Table
+
