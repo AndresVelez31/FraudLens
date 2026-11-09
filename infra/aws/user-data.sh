@@ -21,6 +21,9 @@ chmod +x "$PLUGINS/docker-compose" "$PLUGINS/docker-buildx"
 
 git clone --branch "$RAMA" https://github.com/AndresVelez31/FraudLens.git /opt/fraudlens
 chown -R ec2-user:ec2-user /opt/fraudlens
+# El repo es de ec2-user, pero por Session Manager se trabaja como root (sudo -i): sin esto git lo rechaza
+# ("detected dubious ownership") y no se puede hacer git pull.
+git config --system --add safe.directory /opt/fraudlens
 
 docker --version
 docker compose version

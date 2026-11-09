@@ -160,9 +160,26 @@ contenedores no pueden leer las credenciales del rol):
 | EC2-A | `streaming` | 3 brokers de Kafka (512 MB de heap cada uno), Spark Structured Streaming, productor |
 | EC2-B | `batch` | PostgreSQL, Airflow (con Spark batch dentro) y la API |
 
-En cada EC2: instalar Docker, clonar, `cp .env.example .env`, completar las dos claves obligatorias, descomentar el perfil
-de esa máquina y `docker compose up -d --build`. No se ponen llaves de AWS en ningún lado: boto3 y Spark toman las
-credenciales del rol de la instancia. Se entra a las máquinas por Session Manager (sin SSH).
+Al lanzar cada EC2 se pega `infra/aws/user-data.sh` en **User data**: instala Docker, Compose y Buildx y clona `main` en
+`/opt/fraudlens`. Después, por Session Manager (sin SSH), **empezando siempre con `sudo -i`**, porque el usuario de
+Session Manager no está en el grupo `docker`:
+
+```bash
+sudo -i
+cd /opt/fraudlens && cp .env.example .env
+# completar POSTGRES_PASSWORD y PII_HMAC_KEY (la MISMA clave PII en las dos EC2) y descomentar el perfil de esa máquina
+docker compose up -d --build
+```
+
+No se ponen llaves de AWS en ningún lado: boto3 y Spark toman las credenciales del rol de la instancia. Para actualizar
+una EC2 después de un cambio en `main`: `cd /opt/fraudlens && git pull && docker compose up -d --build`.
+
+Las EC2 se detienen solas todos los días a las 11:00 p. m. (hora de Colombia) con el horario `fraudlens-apagar-ec2` de
+EventBridge Scheduler; al encenderlas, los contenedores arrancan solos y el streaming retoma desde su checkpoint.
+
+**Permisos del rol `fraudlens-ec2` para registrar Gold en Glue:** `glue:GetDatabase`, `glue:GetTable`, `glue:GetTables`,
+`glue:CreateTable`, `glue:UpdateTable`, `glue:DeleteTable` y `glue:GetPartitions` sobre la base `fraudlens`. `DeleteTable`
+hace falta para reparar las entradas que deja Athena cuando un registro falla.
 
 Athena lee Gold registrado en Glue (`python -m batch.publicar glue`, tarea del DAG `fraude_pipeline`); Power BI se conecta
 a Athena. En local las preguntas P4–P6 se responden con `batch.consultas`.

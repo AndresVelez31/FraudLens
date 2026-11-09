@@ -30,27 +30,104 @@ def optimize(spark):
             log.info("OPTIMIZE ZORDER BY %s: %s", col, t)
 
 
-def registrar_glue():
-    """En local no hay Athena: se omite sin error."""
-    if config.S3_ENDPOINT or not config.env("ATHENA_WORKGROUP"):
-        log.info("registro en Glue omitido (modo local)")
-        return
-    import boto3
+def estado_en_glue(tabla_glue):
+    """Clasifica la entrada de Glue de una tabla Delta: "falta", "rota" o "ok".
 
-    athena = boto3.client("athena", region_name=config.REGION)
-    bd, wg = config.env("GLUE_DATABASE", "fraudlens"), config.env("ATHENA_WORKGROUP")
+    Cuando Athena falla al registrar una tabla Delta (por ejemplo, porque todavía no existe en S3), igual deja en
+    Glue una entrada sin StorageDescriptor ni columnas. Athena no puede leer esa entrada (HIVE_UNSUPPORTED_FORMAT) y,
+    como el DDL usa IF NOT EXISTS, los intentos siguientes la dan por buena. Esa entrada se considera "rota".
+    """
+    if tabla_glue is None:
+        return "falta"
+    sd = tabla_glue.get("StorageDescriptor") or {}
+    if not sd.get("Location") or not sd.get("Columns"):
+        return "rota"
+    return "ok"
+
+
+def _existe_delta(s3, uri):
+    """True si en `uri` (s3://bucket/prefijo) ya hay un _delta_log, es decir, si la tabla Delta existe."""
+    bucket, prefijo = uri.replace("s3://", "", 1).split("/", 1)
+    r = s3.list_objects_v2(Bucket=bucket, Prefix=prefijo.rstrip("/") + "/_delta_log/", MaxKeys=1)
+    return r.get("KeyCount", 0) > 0
+
+
+def _tabla_glue(glue, bd, tabla):
+    try:
+        return glue.get_table(DatabaseName=bd, Name=tabla)["Table"]
+    except glue.exceptions.EntityNotFoundException:
+        return None
+
+
+def _ejecutar_athena(athena, sql, workgroup, espera=1.0, max_espera_s=120):
+    """Ejecuta una sentencia en Athena y devuelve (estado, motivo)."""
+    q = athena.start_query_execution(QueryString=sql, WorkGroup=workgroup)["QueryExecutionId"]
+    inicio = time.time()
+    while True:
+        estado = athena.get_query_execution(QueryExecutionId=q)["QueryExecution"]["Status"]
+        if estado["State"] in ("SUCCEEDED", "FAILED", "CANCELLED"):
+            return estado["State"], estado.get("StateChangeReason")
+        if time.time() - inicio > max_espera_s:
+            return "TIMEOUT", "Athena no respondió en %d s" % max_espera_s
+        time.sleep(espera)
+
+
+def registrar_glue(s3=None, glue=None, athena=None):
+    """Registra en Glue (vía Athena) las tablas Delta de Gold para que Athena y Power BI las lean.
+
+    Por cada tabla:
+      * si todavía no existe en S3 (el DAG aún no la ha creado), la salta y la registra en una corrida posterior;
+      * si ya está bien registrada, no hace nada;
+      * si quedó una entrada rota de un intento fallido, la borra y la vuelve a crear;
+      * si el registro falla, borra la entrada a medias, sigue con las demás y al final falla con la lista,
+        para que Airflow reintente sin dejar el catálogo roto.
+    En local (MinIO) no hay Athena: se omite sin error. En AWS falta configuración = error.
+    """
+    if config.S3_ENDPOINT:
+        log.info("registro en Glue omitido (modo local)")
+        return {}
+    bd, wg = config.env("GLUE_DATABASE"), config.env("ATHENA_WORKGROUP")
+    if not bd or not wg:
+        raise RuntimeError("Faltan GLUE_DATABASE o ATHENA_WORKGROUP: sin ellas Athena no ve las tablas de Gold")
+
+    if s3 is None or glue is None or athena is None:
+        import boto3
+
+        s3 = s3 or boto3.client("s3", region_name=config.REGION)
+        glue = glue or boto3.client("glue", region_name=config.REGION)
+        athena = athena or boto3.client("athena", region_name=config.REGION)
+
+    resultado, fallas = {}, []
     for t in TABLAS:
-        ddl = "CREATE EXTERNAL TABLE IF NOT EXISTS %s.%s LOCATION '%s/' TBLPROPERTIES ('table_type'='DELTA')" % (
-            bd, t, config.lake("gold", t).replace("s3a://", "s3://"))
-        q = athena.start_query_execution(QueryString=ddl, WorkGroup=wg)["QueryExecutionId"]
-        while True:
-            estado = athena.get_query_execution(QueryExecutionId=q)["QueryExecution"]["Status"]
-            if estado["State"] in ("SUCCEEDED", "FAILED", "CANCELLED"):
-                break
-            time.sleep(1)
-        if estado["State"] != "SUCCEEDED":
-            raise RuntimeError("Athena no pudo registrar %s: %s" % (t, estado.get("StateChangeReason")))
-        log.info("Glue/Athena: tabla %s registrada", t)
+        uri = config.lake("gold", t).replace("s3a://", "s3://").rstrip("/")
+        if not _existe_delta(s3, uri):
+            resultado[t] = "pendiente (aún no existe en S3)"
+            log.info("Glue: %s todavía no existe en S3; se registrará en una corrida posterior", t)
+            continue
+        estado = estado_en_glue(_tabla_glue(glue, bd, t))
+        if estado == "ok":
+            resultado[t] = "ya registrada"
+            continue
+        if estado == "rota":
+            glue.delete_table(DatabaseName=bd, Name=t)
+            log.warning("Glue: %s tenía una entrada rota de un intento anterior; se borró para recrearla", t)
+        ddl = "CREATE EXTERNAL TABLE IF NOT EXISTS %s.%s LOCATION '%s/' TBLPROPERTIES ('table_type'='DELTA')" % (bd, t, uri)
+        st, motivo = _ejecutar_athena(athena, ddl, wg)
+        if st == "SUCCEEDED" and estado_en_glue(_tabla_glue(glue, bd, t)) == "ok":
+            resultado[t] = "registrada" if estado == "falta" else "reparada"
+            log.info("Glue: tabla %s %s", t, resultado[t])
+            continue
+        # Falló: no dejar una entrada a medias que bloquee los reintentos.
+        if _tabla_glue(glue, bd, t) is not None and estado_en_glue(_tabla_glue(glue, bd, t)) != "ok":
+            glue.delete_table(DatabaseName=bd, Name=t)
+        resultado[t] = "falló: %s" % (motivo or st)
+        fallas.append(t)
+        log.error("Glue: no se pudo registrar %s (%s)", t, motivo or st)
+
+    log.info("Glue: %s", resultado)
+    if fallas:
+        raise RuntimeError("No se pudieron registrar en Glue: %s (Airflow reintentará)" % ", ".join(fallas))
+    return resultado
 
 
 def _post(url, cuerpo=None, token=None):
