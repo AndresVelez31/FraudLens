@@ -1,0 +1,127 @@
+{
+  "filas": 590540,
+  "fraudes": 20663,
+  "tasa_fraude": 0.03499,
+  "dias_cubiertos": 182,
+  "tasa_por_segundo_real": 0.0376,
+  "con_dispositivo": {
+    "filas": 118666,
+    "porcentaje": 20.09,
+    "tasa_fraude_con_identity": 0.07962
+  },
+  "nulos_pct": {
+    "card1": 0.0,
+    "addr1": 11.13,
+    "D1": 0.21,
+    "P_emaildomain": 15.99
+  },
+  "clientes": {
+    "distintos": 217850,
+    "tx_por_cliente_p50": 1.0,
+    "tx_por_cliente_p99": 20.0
+  },
+  "monto_usd": {
+    "p50": 68.77,
+    "p90": 275.29,
+    "p99": 1104.0,
+    "max": 31937.39,
+    "p50_fraude": 75.0,
+    "p50_legitimo": 68.5
+  },
+  "producto": {
+    "C": {
+      "filas": 68519,
+      "tasa_fraude": 0.1169
+    },
+    "H": {
+      "filas": 33024,
+      "tasa_fraude": 0.0477
+    },
+    "R": {
+      "filas": 37699,
+      "tasa_fraude": 0.0378
+    },
+    "S": {
+      "filas": 11628,
+      "tasa_fraude": 0.059
+    },
+    "W": {
+      "filas": 439670,
+      "tasa_fraude": 0.0204
+    }
+  },
+  "hora_utc_tasa_fraude": {
+    "0": 0.0314,
+    "1": 0.0313,
+    "2": 0.0375,
+    "3": 0.0383,
+    "4": 0.0519,
+    "5": 0.0703,
+    "6": 0.0777,
+    "7": 0.1061,
+    "8": 0.093,
+    "9": 0.09,
+    "10": 0.0532,
+    "11": 0.0388,
+    "12": 0.0304,
+    "13": 0.0229,
+    "14": 0.0242,
+    "15": 0.0254,
+    "16": 0.0295,
+    "17": 0.0315,
+    "18": 0.0352,
+    "19": 0.0347,
+    "20": 0.0343,
+    "21": 0.034,
+    "22": 0.0327,
+    "23": 0.037
+  },
+  "correo_mayor_tasa_min_500": {
+    "mail.com": {
+      "filas": 559,
+      "tasa_fraude": 0.1896
+    },
+    "outlook.com": {
+      "filas": 5096,
+      "tasa_fraude": 0.0946
+    },
+    "live.com.mx": {
+      "filas": 749,
+      "tasa_fraude": 0.0547
+    },
+    "hotmail.com": {
+      "filas": 45250,
+      "tasa_fraude": 0.053
+    },
+    "gmail.com": {
+      "filas": 228355,
+      "tasa_fraude": 0.0435
+    },
+    "icloud.com": {
+      "filas": 6267,
+      "tasa_fraude": 0.0314
+    },
+    "comcast.net": {
+      "filas": 7888,
+      "tasa_fraude": 0.0312
+    },
+    "charter.net": {
+      "filas": 816,
+      "tasa_fraude": 0.0306
+    }
+  },
+  "r1_tx_en_5min": {
+    "p50": 1.0,
+    "p99": 3.0,
+    "p999": 13.0,
+    "max": 35,
+    "tasa_fraude_si_>=3": 0.0874,
+    "tasa_fraude_si_>=5": 0.0508,
+    "tasa_fraude_si_1": 0.0318
+  },
+  "r2_dispositivo_nuevo": {
+    "filas": 16746,
+    "tasa_fraude": 0.0772,
+    "tasa_fraude_resto": 0.0718
+  }
+}
