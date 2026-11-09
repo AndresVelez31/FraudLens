@@ -66,7 +66,19 @@ escribir `-f` ni `--profile`.
 riesgo) y deja la lista de riesgo v1 en `landing/listas_riesgo/`. El streaming arranca solo y queda escuchando el topic
 `transacciones`.
 
-**Demo paso a paso**
+**Demo guiada (Windows, PowerShell)**
+
+`scripts/demo.ps1` recorre todo el sistema con una pausa antes de cada paso para explicarlo: catálogos, tráfico con
+fraude, alertas R1/R2/R3 en la API, capas del lakehouse, preguntas P4–P6 y tolerancia a fallos. Al final muestra un
+resumen con lo esperado contra lo obtenido.
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\demo.ps1              # con pausas (para presentar)
+powershell -ExecutionPolicy Bypass -File scripts\demo.ps1 -SinPausas   # todo seguido (para ensayar)
+powershell -ExecutionPolicy Bypass -File scripts\demo.ps1 -SinFallos   # sin el paso de tolerancia a fallos
+```
+
+**Demo paso a paso (comandos sueltos)**
 
 ```bash
 # 1) Cargar catálogos (Airflow: http://localhost:8081, usuario admin / AIRFLOW_ADMIN_PASSWORD o "admin")
