@@ -11,10 +11,13 @@ x-local-env: &local-env
   AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
   S3_ENDPOINT: http://minio:9000
   DYNAMODB_ENDPOINT: http://dynamodb:8000
+  SNS_TOPIC_ARN: ""                         # en local no se envían correos reales: la alerta solo queda en el log
 
 services:
   minio:
-    image: ${MINIO_IMAGE:-quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z}
+    # MinIO ya no publica imágenes en Docker Hub ni en quay.io; la de Chainguard solo tiene la etiqueta "latest",
+    # así que se fija por digest para que siempre baje la misma versión (consultada el 9 nov 2026).
+    image: ${MINIO_IMAGE:-cgr.dev/chainguard/minio@sha256:616286de6ef3a1892876b126e745e152d8e03add6357203f8a1f854bdd1dce76}
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}

@@ -35,6 +35,10 @@ x-spark: &spark-image
   build: {context: ., dockerfile: infra/docker/Dockerfile.spark}
   image: fraudlens-spark
 
+x-airflow: &airflow-image   # cada servicio sabe construir su imagen: compose no intenta bajarla de un registro
+  build: {context: ., dockerfile: infra/docker/Dockerfile.airflow}
+  image: fraudlens-airflow
+
 x-kafka: &kafka
   image: confluentinc/cp-kafka:7.6.0
   profiles: ["streaming"]
@@ -123,7 +127,7 @@ services:
 
   producer:   # generador de transacciones: docker compose run --rm producer python -m producer.producer ...
     <<: *spark-image
-    profiles: ["streaming"]
+    profiles: ["demo"]   # no arranca con `up`; `docker compose run producer` lo activa igual
     environment: *env
     depends_on:
       kafka-init: {condition: service_completed_successfully}
@@ -182,8 +186,7 @@ services:
     restart: unless-stopped
 
   airflow-init:
-    build: {context: ., dockerfile: infra/docker/Dockerfile.airflow}
-    image: fraudlens-airflow
+    <<: *airflow-image
     profiles: ["batch"]
     environment: &airflow-env
       <<: *env
@@ -206,7 +209,7 @@ services:
     restart: "no"
 
   airflow-webserver:
-    image: fraudlens-airflow
+    <<: *airflow-image
     profiles: ["batch"]
     environment: *airflow-env
     command: airflow webserver
@@ -218,7 +221,7 @@ services:
     deploy: {resources: {limits: {memory: 1500m}}}
 
   airflow-scheduler:
-    image: fraudlens-airflow
+    <<: *airflow-image
     profiles: ["batch"]
     environment: *airflow-env
     command: airflow scheduler
