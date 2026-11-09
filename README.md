@@ -41,19 +41,30 @@ API FastAPI  ◄── DynamoDB      Athena/Metabase (AWS) o `batch.consultas` (
 
 ## Cómo correrlo desde cero (local, con Docker)
 
-Requisitos: Docker con Compose v2 y unos **8 GB de RAM** libres para Docker. La imagen de MinIO es la pública de Chainguard
-(`minio/minio` ya no se publica en Docker Hub); se cambia con `MINIO_IMAGE` en `.env`.
+Requisitos: Docker con Compose v2 y unos **8 GB de RAM** libres para Docker.
+
+La configuración está en dos archivos:
+
+| Archivo | Qué tiene |
+|---|---|
+| `docker-compose.yml` | Todos los servicios, pensados para AWS: sin llaves, con S3, DynamoDB y SNS reales. Se dividen en dos perfiles: `streaming` (Kafka, streaming, productor) y `batch` (PostgreSQL, Airflow, API). |
+| `compose.local.yml` | Se suma al anterior en local: agrega MinIO (como S3) y DynamoDB Local, y les pone sus llaves de prueba. |
 
 ```bash
 git clone https://github.com/AndresVelez31/FraudLens.git && cd FraudLens
 cp .env.example .env
-# Edita .env: POSTGRES_PASSWORD y PII_HMAC_KEY son obligatorios (por ejemplo: openssl rand -hex 24)
+# Edita .env: POSTGRES_PASSWORD y PII_HMAC_KEY son obligatorios (por ejemplo: openssl rand -hex 24).
+# Descomenta las dos líneas de la opción "Local" (COMPOSE_FILE y COMPOSE_PROFILES); en Windows usa ";" en COMPOSE_FILE.
 docker compose up -d --build        # la primera vez baja imágenes y jars (varios minutos)
 docker compose ps                   # kafka-init y setup quedan en "Exited (0)": es lo esperado
 ```
 
-`setup` crea el bucket, la tabla de DynamoDB, siembra PostgreSQL (20.000 clientes, 300 comercios + 10 de riesgo) y deja la
-lista de riesgo v1 en `landing/listas_riesgo/`. El streaming arranca solo y queda escuchando el topic `transacciones`.
+Con `COMPOSE_FILE` y `COMPOSE_PROFILES` en el `.env`, todos los comandos `docker compose` de este README funcionan sin
+escribir `-f` ni `--profile`.
+
+`setup` crea el bucket y la tabla de DynamoDB (solo en local), siembra PostgreSQL (20.000 clientes, 300 comercios + 10 de
+riesgo) y deja la lista de riesgo v1 en `landing/listas_riesgo/`. El streaming arranca solo y queda escuchando el topic
+`transacciones`.
 
 **Demo paso a paso**
 
@@ -118,22 +129,31 @@ volumen, memoria): `docker compose logs <servicio>`.
 **no** garantiza el P95 < 30 s del RNF en ese hardware. En una EC2 de 4+ vCPU debería mejorar; **hay que medirlo en la
 demo** con `python -m batch.consultas p5` y actualizar este párrafo.
 
-## Pasar a AWS (Learner Lab)
+## Despliegue en AWS (plan gratuito, us-east-2)
 
-El código no cambia, solo variables de entorno (`.env`):
+El proyecto corre en un proyecto de AWS en el plan gratuito, región **us-east-2**. Kinesis, MSK y Firehose no están
+disponibles en ese plan, así que Kafka corre en contenedores sobre la EC2.
 
-| Variable | Local | AWS |
+**Recursos que ya existen** (creados una vez desde la consola): bucket `fraudlens-lake-216408407230`, base de Glue y
+workgroup de Athena `fraudlens` (límite de 1 GB por consulta), tabla DynamoDB `alertas_fraude` (con Streams y TTL), topic
+SNS `alertas-fraude`, cola SQS `notificador-errores`, rol `fraudlens-ec2` y grupo de seguridad `fraudlens-sg`.
+`python infra/aws/crear_recursos.py --todo` crea la base de esos recursos en un proyecto nuevo.
+
+**Dos EC2 m7i-flex.large** (2 vCPU, 8 GB, elegibles en el plan gratuito), en la misma subred, con el perfil de instancia
+`fraudlens-ec2`, el grupo `fraudlens-sg`, disco EBS cifrado y metadatos IMDSv2 con **hop limit 2** (sin eso, los
+contenedores no pueden leer las credenciales del rol):
+
+| Máquina | `COMPOSE_PROFILES` en `.env` | Qué corre |
 |---|---|---|
-| `S3_ENDPOINT` | `http://minio:9000` | *(vacía)* |
-| `S3_BUCKET` | `fraudlens-lake` | bucket real (`python infra/aws/crear_recursos.py --todo`) |
-| `DYNAMODB_ENDPOINT` | `http://dynamodb:8000` | *(vacía)* |
-| `SNS_TOPIC_ARN` | *(vacía: solo log)* | ARN del topic |
-| `AWS_ACCESS_KEY_ID/SECRET` | `minioadmin` | usar el `LabInstanceProfile` de la EC2 (quitar las claves) |
+| EC2-A | `streaming` | 3 brokers de Kafka (512 MB de heap cada uno), Spark Structured Streaming, productor |
+| EC2-B | `batch` | PostgreSQL, Airflow (con Spark batch dentro) y la API |
 
-Pasos: EC2 (hasta *large*) con Docker → clonar → `.env` → `python infra/aws/crear_recursos.py --todo --email <correo>` →
-`docker compose up -d --build`. Athena lee Gold registrado en Glue (`python -m batch.publicar glue`, tarea del DAG).
-Metabase se conecta a Athena en AWS (no está en el compose local: no puede leer Delta); en local las preguntas P4–P6
-se responden con `batch.consultas`.
+En cada EC2: instalar Docker, clonar, `cp .env.example .env`, completar las dos claves obligatorias, descomentar el perfil
+de esa máquina y `docker compose up -d --build`. No se ponen llaves de AWS en ningún lado: boto3 y Spark toman las
+credenciales del rol de la instancia. Se entra a las máquinas por Session Manager (sin SSH).
+
+Athena lee Gold registrado en Glue (`python -m batch.publicar glue`, tarea del DAG `fraude_pipeline`); Power BI se conecta
+a Athena. En local las preguntas P4–P6 se responden con `batch.consultas`.
 
 ## Decisiones y diferencias respecto al E1
 
