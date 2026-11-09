@@ -109,3 +109,22 @@ def test_r3_lista_de_riesgo_vigente(spark):
     vigente = rules.lista_vigente(todas)
     ids = {r.id_transaccion for r in rules.r3_alertas(tx, vigente, "v1").collect()}
     assert ids == {"Y1", "Y2"}
+
+
+def test_r2_ignora_transacciones_sin_dispositivo(spark):
+    # Con IEEE-CIS el 80 % de las transacciones no trae dispositivo: no pueden contar como "dispositivo nuevo".
+    t = datetime(2026, 11, 4, 14, 0, 0)
+    tx = tx_df(spark, [
+        ("Z1", t, "C1", "W", None, 900_000.0, "W", 0, 1),        # sin dispositivo y monto alto -> no
+        ("Z2", t, "C1", "W", "D-NUEVO", 900_000.0, "W", 0, 2),   # dispositivo nuevo y monto alto -> sí
+    ])
+    disp = spark.createDataFrame([("C1", "D-VIEJO"), ("C1", None)], "id_cliente string, id_dispositivo string")
+    perfil = spark.createDataFrame([("C1", 100_000.0)], "id_cliente string, avg_monto_30d double")
+    assert {r.id_transaccion for r in rules.r2_alertas(tx, disp, perfil, "v1").collect()} == {"Z2"}
+
+
+def test_eventos_de_ieee_pasan_la_validacion(spark):
+    # Tipo de producto de IEEE-CIS y sin dispositivo: deben ser válidos, no ir a cuarentena.
+    e = evento(1, tipo="C", id_dispositivo=None, id_comercio="C", ciudad="R315")
+    c = clasificar(raw(spark, [json.dumps(e)])).collect()[0]
+    assert (c.ilegible, c.motivo) == (False, None)

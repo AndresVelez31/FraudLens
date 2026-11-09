@@ -112,6 +112,33 @@ Apagar: `docker compose down` (conserva datos) o `docker compose down -v` (borra
   con dos brokers caídos el productor se detiene en lugar de perder datos (CP).
 * **Fallo de una tarea de Airflow:** 3 reintentos con espera exponencial y aviso por SNS (si hay `SNS_TOPIC_ARN`).
 
+## Datos reales: IEEE-CIS
+
+FraudLens usa transacciones reales de **IEEE-CIS Fraud Detection** (Vesta, Kaggle): 590.540 transacciones con
+3,50 % de fraude etiquetado, en 182 días. Ficha completa y supuestos del mapeo: [docs/datos/ieee-cis.md](docs/datos/ieee-cis.md).
+
+1. **Descargar** `train_transaction.csv` y `train_identity.csv` desde Kaggle (hay que aceptar las reglas de la
+   competencia) en `data/ieee-cis/`. La carpeta `data/` no se sube al repositorio ni entra a las imágenes de Docker.
+2. **Perfilar y preparar** (necesita `pip install pandas boto3`):
+   ```bash
+   python scripts/perfil_ieee.py --datos data/ieee-cis        # cifras -> docs/datos/ieee-cis-perfil.json
+   python scripts/preparar_ieee.py --datos data/ieee-cis --destino s3a://<bucket>   # prepara y sube al lake
+   ```
+   Genera los eventos (sin la etiqueta), las etiquetas aparte, la partición temporal 80/20, catálogos y la lista de
+   riesgo `riesgo_v100.csv`: 43 dispositivos aprendidos solo con el 80 % inicial. En el 20 % final esa lista acierta
+   el 18,6 % de sus alertas, unas 5 veces la tasa base. Para MinIO local, antes de `--destino`:
+   `S3_ENDPOINT=http://localhost:9000 AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin AWS_REGION=us-east-1`.
+3. **Cargar la lista** con el DAG `catalogos_diario` y **reproducir** las transacciones:
+   ```bash
+   docker compose run --rm --no-deps producer python -m producer.replayer --particion prueba --limite 20000 --factor 1300
+   ```
+   `--factor 1300` reproduce el ritmo real acelerado (~50 eventos/s); `--factor 0 --tasa-max 200` envía lo más rápido
+   posible con tope; `--malos-pct 1` inyecta registros dañados para probar la DLQ y la cuarentena.
+
+**Prueba local** (5.000 transacciones del 20 % final, 1 % dañadas): 0 transacciones reales en cuarentena, los 43
+registros inválidos inyectados en cuarentena con su motivo, los 13 ilegibles en la DLQ y exactamente las 21 alertas R3
+esperadas (5 de ellas son fraude real).
+
 ## Pruebas
 
 ```bash

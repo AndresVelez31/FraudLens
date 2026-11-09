@@ -100,7 +100,9 @@ def r2_alertas(tx, dispositivos, perfil, version):
     Sin perfil no hay con qué comparar, así que un cliente sin historial no genera R2.
     """
     c = config_version(version)
-    vistos = dispositivos.select("id_cliente", "id_dispositivo").distinct().withColumn("_visto", F.lit(1))
+    tx = tx.where(F.col("id_dispositivo").isNotNull())  # sin dispositivo no se puede decir que sea "nuevo"
+    vistos = (dispositivos.where(F.col("id_dispositivo").isNotNull()).select("id_cliente", "id_dispositivo")
+              .distinct().withColumn("_visto", F.lit(1)))
     nuevos = tx.join(vistos, ["id_cliente", "id_dispositivo"], "left").where(F.col("_visto").isNull())
     f = nuevos.join(perfil.select("id_cliente", "avg_monto_30d"), "id_cliente", "inner").where(
         F.col("monto") > c["r2_factor"] * F.col("avg_monto_30d")
@@ -122,6 +124,7 @@ def r2_alertas_historico(tx_historia, version):
     )
     f = t.where(
         (F.col("_orden_disp") == 1)
+        & F.col("id_dispositivo").isNotNull()
         & F.col("avg_monto_30d").isNotNull()
         & (F.col("monto") > c["r2_factor"] * F.col("avg_monto_30d"))
     )

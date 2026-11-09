@@ -4,3 +4,4 @@ spark-warehouse
 **/__pycache__
 docs
 tests
+data
