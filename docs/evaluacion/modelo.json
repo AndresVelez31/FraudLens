@@ -1,0 +1,90 @@
+{
+  "reglas_calibradas_referencia": {
+    "precision": 0.0745,
+    "recall": 0.1004,
+    "alertas_por_mil": 46.4
+  },
+  "modelos": {
+    "contrato": {
+      "auc_roc": 0.8041,
+      "auc_pr": 0.1597,
+      "arboles": 203,
+      "mismo_presupuesto_que_reglas": {
+        "alertadas": 5480,
+        "tp": 1128,
+        "fp": 4352,
+        "fn": 2936,
+        "precision": 0.2058,
+        "recall": 0.2776,
+        "alertas_por_mil": 46.4,
+        "monto_fraude_detectado_pct": 26.6
+      },
+      "misma_cobertura_que_reglas": {
+        "alertadas": 1431,
+        "tp": 409,
+        "fp": 1022,
+        "fn": 3655,
+        "precision": 0.2858,
+        "recall": 0.1006,
+        "alertas_por_mil": 12.12,
+        "monto_fraude_detectado_pct": 13.03
+      },
+      "variables": 17,
+      "importancia_top10_pct": {
+        "tipo": 17.1,
+        "region": 14.6,
+        "monto": 12.8,
+        "disp_tx_previas": 12.1,
+        "correo_dominio": 9.8,
+        "cli_seg_desde_anterior": 8.7,
+        "cli_monto_prom_30d": 6.0,
+        "cli_tx_previas": 4.5,
+        "hora": 4.2,
+        "monto_vs_prom_30d": 2.6
+      }
+    },
+    "vesta": {
+      "auc_roc": 0.908,
+      "auc_pr": 0.549,
+      "arboles": 794,
+      "mismo_presupuesto_que_reglas": {
+        "alertadas": 5480,
+        "tp": 2356,
+        "fp": 3124,
+        "fn": 1708,
+        "precision": 0.4299,
+        "recall": 0.5797,
+        "alertas_por_mil": 46.4,
+        "monto_fraude_detectado_pct": 55.28
+      },
+      "misma_cobertura_que_reglas": {
+        "alertadas": 421,
+        "tp": 409,
+        "fp": 12,
+        "fn": 3655,
+        "precision": 0.9715,
+        "recall": 0.1006,
+        "alertas_por_mil": 3.56,
+        "monto_fraude_detectado_pct": 5.97
+      },
+      "variables": 431,
+      "importancia_top10_pct": {
+        "V258": 11.5,
+        "C1": 5.3,
+        "DeviceInfo": 4.5,
+        "C13": 3.7,
+        "card2": 3.4,
+        "C14": 3.2,
+        "card1": 3.2,
+        "V294": 2.9,
+        "TransactionAmt": 2.8,
+        "addr1": 2.7
+      }
+    }
+  },
+  "particion_prueba": {
+    "transacciones": 118108,
+    "tasa_base": 0.03441
+  },
+  "duracion_s": 111.6
+}

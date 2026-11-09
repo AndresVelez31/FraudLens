@@ -68,12 +68,59 @@ Tabla generada: [`resultados.md`](resultados.md). Cifras completas, con la matri
 4. **Las señales más fuertes no están en las reglas:** el tipo de producto (C: 11,7 % de fraude) y el dominio de
    correo (`mail.com`: 19 %) separan mejor que la velocidad o el dispositivo.
 
+## Reglas contra modelo (F2)
+
+Modelo de referencia **LightGBM** (`ml/modelo_lightgbm.py`), entrenado con la **misma partición temporal** y evaluado en
+las mismas 118.108 transacciones de prueba. Dos versiones:
+
+- **Modelo "contrato"** (17 variables): solo lo que FraudLens puede calcular en el streaming con el evento y la
+  historia previa del cliente, sin mirar el futuro. Entre otras: monto, tipo de producto, región, dominio de correo,
+  pagos del cliente en 5 min, 1 h y 24 h, promedio de 30 días y uso previo del dispositivo. Es el candidato a regla R4.
+- **Modelo "vesta"** (431 variables): todas las columnas originales de IEEE-CIS, que el evento de FraudLens no trae.
+  Muestra hasta dónde se puede llegar con toda la información.
+
+**Con el mismo presupuesto de alertas que las reglas (46,4 por cada 1.000 pagos):**
+
+| Enfoque | Precisión | Cobertura | Monto de fraude detectado | AUC-ROC | AUC-PR |
+|---|---|---|---|---|---|
+| Reglas del E1 (v1)* | 6,5 % | 3,3 % | 1,9 % | — | — |
+| Reglas calibradas (`ieee`) | 7,4 % | 10,0 % | 6,7 % | — | — |
+| **LightGBM "contrato"** | **20,6 %** | **27,8 %** | **26,6 %** | 0,804 | 0,160 |
+| LightGBM "vesta" (referencia) | 43,0 % | 58,0 % | 55,3 % | 0,908 | 0,549 |
+
+\* Con v1 se generan solo 17,6 alertas por cada 1.000 pagos.
+
+**Con la misma cobertura que las reglas (detectar el 10 % del fraude):**
+
+| Enfoque | Precisión | Alertas por cada 1.000 pagos |
+|---|---|---|
+| Reglas calibradas | 7,4 % | 46,4 |
+| LightGBM "contrato" | 28,6 % | 12,1 |
+| LightGBM "vesta" | 97,2 % | 3,6 |
+
+**Lectura:**
+- Con la misma carga de trabajo para los analistas, el **modelo con las variables que ya tiene FraudLens acierta
+  2,8 veces más que las reglas** (21 de cada 100 alertas contra 7) y **detecta 2,8 veces más fraude** (28 % contra
+  10 %).
+- Para detectar el mismo 10 % de fraude, el modelo necesita **4 veces menos alertas** (12 contra 46 por cada 1.000
+  pagos). Son 4 veces menos clientes legítimos molestados.
+- Las variables más útiles del modelo "contrato" son el tipo de producto, la región, el monto, el uso previo del
+  dispositivo y el dominio de correo. Son justamente las señales que las reglas no usan.
+- El modelo "vesta" muestra que, con más información del pago, se duplica otra vez la precisión. Su AUC-ROC de 0,908
+  está por debajo del ~0,95 de las mejores soluciones de la competencia. Esas soluciones usan mucha ingeniería de
+  variables y validación aleatoria, que es más fácil que nuestra partición en el tiempo.
+
+**Conclusión para la defensa:** las reglas son explicables, rápidas y fáciles de auditar, pero con estos datos su
+precisión es baja. El camino para mejorar es un **modelo (R4) que use las señales del evento**, puntuando cada pago
+en el streaming. Las reglas quedan como explicación y como respaldo. Los modelos entrenados se guardan en
+`data/modelos/`, fuera del repositorio.
+
 ## Contra qué se compara
 
 - **La realidad:** las etiquetas de fraude de Vesta. Es la comparación de esta tabla.
 - **El estado del arte en el mismo dataset:** las mejores soluciones de la competencia usan modelos de *gradient
   boosting* y reportan AUC-ROC cercanas a 0,95 (verificar la cifra exacta en el leaderboard de Kaggle). Las reglas no
-  dan un puntaje continuo, así que la comparación justa es contra un modelo propio evaluado igual: es la tarea **F2**
-  (LightGBM) y luego **F3** (comparación final y reglas filtradas por el modelo).
+  dan un puntaje continuo, así que la comparación justa es contra un modelo propio evaluado igual: es la sección
+  "Reglas contra modelo" (F2). Falta **F3** (comparación final y reglas filtradas por el modelo).
 - **La industria:** los sistemas de reglas fijas tienen fama de generar muchos falsos positivos; el 92,6 % de este
   resultado es coherente con eso.
