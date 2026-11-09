@@ -5,6 +5,7 @@ preparados por scripts/preparar_ieee.py:
 
   python -m batch.evaluacion calibrar --datos data/ieee-cis/preparado        # D2: solo partición de entrenamiento
   python -m batch.evaluacion evaluar  --datos data/ieee-cis/preparado        # F1: partición de prueba, v1 vs ieee
+  python -m batch.evaluacion exportar --datos data/ieee-cis/preparado        # F3: marcas por transacción (prueba)
 
 Reglas de evaluación (iguales a Gold, `marcar_sospechosas`):
   * una transacción queda ALERTADA si tiene alerta propia (R2, R3) o si cae dentro de una ventana de R1 que alertó;
@@ -16,6 +17,7 @@ anterior disponible para R1 y R2 (as-of), como pasaría en producción.
 Resultados en docs/evaluacion/ (calibracion.json, resultados.json y resultados.md).
 """
 import argparse
+import csv
 import json
 import os
 import sys
@@ -164,6 +166,32 @@ def evaluar(spark, datos, versiones):
     return salida
 
 
+# ------------------------------------------------------------------ F3: marcas por transacción
+MARCAS = "data/evaluacion/marcas_prueba_%s.csv"
+
+
+def exportar(spark, datos, version="ieee"):
+    """Escribe, para cada transacción de prueba, qué reglas la marcaron (0/1). Lo usa ml/comparacion_final.py para
+    combinar las reglas con el puntaje del modelo. Queda en data/, fuera del repositorio."""
+    tx, lista = cargar(spark, datos)
+    agregado = rules.r1_agregar(tx.select("ts_evento", "id_cliente", "monto")).cache()
+    m = tx.where(F.col("particion") == "prueba").select("id_transaccion", "is_fraud", "monto")
+    for nombre, marcadas in (("r1", marcadas_r1(tx, agregado, version)), ("r2", marcadas_r2(tx, version)),
+                             ("r3", marcadas_r3(tx, lista, version))):
+        m = (m.join(marcadas.withColumn(nombre, F.lit(1)), "id_transaccion", "left")
+             .withColumn(nombre, F.coalesce(nombre, F.lit(0))))
+    columnas = ["id_transaccion", "is_fraud", "monto", "r1", "r2", "r3"]
+    filas = m.select(*columnas).collect()   # ~118 mil filas: caben en el driver (la imagen de Spark no trae pandas)
+    ruta = MARCAS % version
+    os.makedirs(os.path.dirname(ruta), exist_ok=True)
+    with open(ruta, "w", newline="", encoding="utf-8") as f:
+        w = csv.writer(f)
+        w.writerow(columnas)
+        w.writerows(tuple(r) for r in filas)
+    print("marcas:", ruta, len(filas), "transacciones;", {c: sum(r[c] for r in filas) for c in ("r1", "r2", "r3")}, flush=True)
+    return ruta
+
+
 def _guardar(nombre, obj):
     os.makedirs(SALIDA, exist_ok=True)
     with open(os.path.join(SALIDA, nombre), "w", encoding="utf-8") as f:
@@ -191,13 +219,18 @@ def _guardar_markdown(salida):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("paso", choices=["calibrar", "evaluar"])
+    ap.add_argument("paso", choices=["calibrar", "evaluar", "exportar"])
     ap.add_argument("--datos", default="data/ieee-cis/preparado", help="carpeta (o URI del lake) con los datos preparados")
     ap.add_argument("--versiones", nargs="+", default=["v1", "ieee"])
     a = ap.parse_args()
     spark = get_spark("fraudlens-evaluacion", shuffle_partitions=16)
     try:
-        calibrar(spark, a.datos) if a.paso == "calibrar" else evaluar(spark, a.datos, a.versiones)
+        if a.paso == "calibrar":
+            calibrar(spark, a.datos)
+        elif a.paso == "evaluar":
+            evaluar(spark, a.datos, a.versiones)
+        else:
+            exportar(spark, a.datos, a.versiones[-1])
     finally:
         spark.stop()
     return 0
