@@ -32,3 +32,7 @@ Thumbs.db
 *.fdb_latexmk
 *.out
 *.toc
+
+# Power BI (proyecto .pbip): configuración local y caché de datos de cada máquina
+**/.pbi/localSettings.json
+**/.pbi/cache.abf

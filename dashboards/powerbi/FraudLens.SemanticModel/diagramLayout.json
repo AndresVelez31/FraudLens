@@ -1,0 +1,100 @@
+{
+  "version": "1.1.0",
+  "diagrams": [
+    {
+      "ordinal": 0,
+      "scrollPosition": {
+        "x": 0,
+        "y": 81.7413225398559
+      },
+      "nodes": [
+        {
+          "location": {
+            "x": 439.488350029957,
+            "y": 858.7794156938777
+          },
+          "nodeIndex": "dim_cliente",
+          "nodeLineageTag": "c710f9c7-e029-4ecb-b643-6261a96ce21b",
+          "size": {
+            "height": 296,
+            "width": 234
+          },
+          "zIndex": 0
+        },
+        {
+          "location": {
+            "x": 889.05952236481141,
+            "y": 372.31231176160156
+          },
+          "nodeIndex": "dim_comercio",
+          "nodeLineageTag": "7cad8332-2394-4728-978d-55ba3910669c",
+          "size": {
+            "height": 176,
+            "width": 234
+          },
+          "zIndex": 0
+        },
+        {
+          "location": {
+            "x": 955.802823242162,
+            "y": 999.33802902779337
+          },
+          "nodeIndex": "dim_regla",
+          "nodeLineageTag": "dde3ddf7-4ff9-4223-ae1b-a03d2f978bb1",
+          "size": {
+            "height": 176,
+            "width": 234
+          },
+          "zIndex": 0
+        },
+        {
+          "location": {
+            "x": 447.61850595935732,
+            "y": 0
+          },
+          "nodeIndex": "dim_tiempo",
+          "nodeLineageTag": "0ccb31fc-d24e-48e0-adcd-c5e4e2530373",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 0
+        },
+        {
+          "location": {
+            "x": 915.74354510172248,
+            "y": 626.28480158761681
+          },
+          "nodeIndex": "fact_alertas",
+          "nodeLineageTag": "80de0b42-d159-46e7-99bf-23ebe18fbd20",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 0
+        },
+        {
+          "location": {
+            "x": 430.61888736592687,
+            "y": 379.2984827717184
+          },
+          "nodeIndex": "fact_transacciones",
+          "nodeLineageTag": "36233746-1d39-43b8-85bf-23b6c80d09a6",
+          "size": {
+            "height": 300,
+            "width": 234
+          },
+          "zIndex": 0
+        }
+      ],
+      "name": "All tables",
+      "zoomValue": 70.955543900968848,
+      "pinKeyFieldsToTop": false,
+      "showExtraHeaderInfo": false,
+      "hideKeyFieldsWhenCollapsed": false,
+      "tablesLocked": false
+    }
+  ],
+  "selectedDiagram": "All tables",
+  "defaultDiagram": "All tables"
+}

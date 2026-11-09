@@ -1,0 +1,112 @@
+table dim_tiempo
+	lineageTag: 0ccb31fc-d24e-48e0-adcd-c5e4e2530373
+
+	column id_tiempo
+		dataType: int64
+		formatString: 0
+		lineageTag: 1823d587-4d78-4a7d-afcb-d913a205a875
+		summarizeBy: none
+		sourceColumn: id_tiempo
+
+		annotation SummarizationSetBy = Automatic
+
+	column fecha
+		dataType: dateTime
+		formatString: Long Date
+		lineageTag: 173346c8-9bef-4990-8eb2-89d98c9650d8
+		summarizeBy: none
+		sourceColumn: fecha
+
+		variation Variation
+			isDefault
+			relationship: 9650ebf7-462d-44b2-82dd-99ef09e54f86
+			defaultHierarchy: LocalDateTable_b5420504-fb8d-4910-9571-ce090975a61a.'Date Hierarchy'
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
+
+	column anio
+		dataType: int64
+		formatString: 0
+		lineageTag: 46759486-8be4-4e0c-91bf-95068a28c47a
+		summarizeBy: sum
+		sourceColumn: anio
+
+		annotation SummarizationSetBy = Automatic
+
+	column mes
+		dataType: int64
+		formatString: 0
+		lineageTag: 9cf149f4-01d6-4bdb-b6f3-9eccaeec7c0f
+		summarizeBy: sum
+		sourceColumn: mes
+
+		annotation SummarizationSetBy = Automatic
+
+	column dia
+		dataType: int64
+		formatString: 0
+		lineageTag: 8ff7650c-25c6-4c23-a981-a371a79edbe7
+		summarizeBy: sum
+		sourceColumn: dia
+
+		annotation SummarizationSetBy = Automatic
+
+	column hora
+		dataType: int64
+		formatString: 0
+		lineageTag: 6f2de083-a323-4e81-9933-290f02f997d8
+		summarizeBy: sum
+		sourceColumn: hora
+
+		annotation SummarizationSetBy = Automatic
+
+	column franja
+		dataType: string
+		lineageTag: ee275c47-b605-44e4-937a-259e30772f66
+		summarizeBy: none
+		sourceColumn: franja
+
+		annotation SummarizationSetBy = Automatic
+
+	column dia_semana
+		dataType: int64
+		formatString: 0
+		lineageTag: f5297d49-cf6f-461f-b61c-884e619c4285
+		summarizeBy: sum
+		sourceColumn: dia_semana
+
+		annotation SummarizationSetBy = Automatic
+
+	column semana_iso
+		dataType: int64
+		formatString: 0
+		lineageTag: c95d6e36-0a8e-4565-9268-0032429e5744
+		summarizeBy: sum
+		sourceColumn: semana_iso
+
+		annotation SummarizationSetBy = Automatic
+
+	column es_fin_de_semana
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 533fee48-0eea-4d30-a628-a650b9b63179
+		summarizeBy: none
+		sourceColumn: es_fin_de_semana
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_tiempo = m
+		mode: import
+		source =
+				let
+				    Source = Odbc.DataSource("Driver={Amazon Athena ODBC (x64)};AwsRegion=us-east-2;Catalog=AwsDataCatalog;Schema=fraudlens;Workgroup=fraudlens;S3OutputLocation=s3://fraudlens-lake-216408407230/athena-results/;S3OutputEncOption=SSE_S3;AuthenticationType=IAM Profile;AWSProfile=powerbi-athena", [HierarchicalNavigation=true]),
+				    AwsDataCatalog_Database = Source{[Name="AwsDataCatalog",Kind="Database"]}[Data],
+				    fraudlens_Schema = AwsDataCatalog_Database{[Name="fraudlens",Kind="Schema"]}[Data],
+				    dim_tiempo_Table = fraudlens_Schema{[Name="dim_tiempo",Kind="Table"]}[Data]
+				in
+				    dim_tiempo_Table
+
+	annotation PBI_ResultType = Table
+

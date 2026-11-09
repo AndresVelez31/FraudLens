@@ -1,0 +1,38 @@
+model Model
+	culture: en-US
+	defaultPowerBIDataSourceVersion: powerBI_V3
+	sourceQueryCulture: es-CO
+	valueFilterBehavior: independent
+	dataAccessOptions
+		legacyRedirects
+		returnErrorValuesAsNull
+
+annotation __PBI_TimeIntelligenceEnabled = 1
+
+annotation PBI_QueryOrder = ["fact_transacciones","fact_alertas","dim_comercio","dim_tiempo","dim_regla","dim_cliente"]
+
+annotation PBI_ProTooling = ["DevMode"]
+
+ref table fact_transacciones
+ref table DateTableTemplate_af3bdc32-ea84-4600-b99e-bee54e1a8a5e
+ref table LocalDateTable_d7193d9c-80dc-4105-9a0e-2a8fc17a24a6
+ref table LocalDateTable_70afb578-a0d3-4774-9892-43de66710c54
+ref table LocalDateTable_90f7ef9c-df15-44c1-86d6-bf1f4f8f54c4
+ref table fact_alertas
+ref table LocalDateTable_56c66415-2275-4386-8f79-5834bc01af8c
+ref table LocalDateTable_76b13e51-c53a-45a2-9bc4-965a6fd6a975
+ref table LocalDateTable_3ea7d487-75ae-4bc4-b793-4eb84cf3013b
+ref table LocalDateTable_c59ad155-16ac-4bae-b675-3231147d0845
+ref table LocalDateTable_c3bee3ff-bf97-44da-8cf1-11729b8ad124
+ref table LocalDateTable_f2272b99-ff98-4fa8-bd9a-473855958c37
+ref table dim_comercio
+ref table dim_tiempo
+ref table LocalDateTable_b5420504-fb8d-4910-9571-ce090975a61a
+ref table dim_regla
+ref table dim_cliente
+ref table LocalDateTable_fc8b5a17-bf0e-444f-9739-365264a286ac
+ref table LocalDateTable_96ed95df-ecf9-4723-aa43-d90ffb3d3fea
+ref table LocalDateTable_f619846f-f648-4424-b3ae-651bd5c3616b
+
+ref cultureInfo en-US
+
