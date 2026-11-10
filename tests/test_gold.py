@@ -161,3 +161,21 @@ def test_gold_viejo_sin_columnas_de_latencia_se_actualiza(spark, lake):
     viejo.write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(ruta)
     gold.hechos(spark, dias=2)
     assert set(gold.COLUMNAS_LATENCIA) <= set(spark.read.format("delta").load(ruta).columns)
+
+
+
+def test_el_corte_no_retrocede_antes_de_la_marca_de_agua():
+    from datetime import datetime, timedelta, timezone
+
+    from batch import gold
+
+    ahora = datetime.now(timezone.utc)
+    gold._MARCA["ts"] = None
+    assert ahora - gold.corte_ingesta(2) > timedelta(days=1)          # sin marca: los últimos 2 días
+    gold._MARCA["ts"] = ahora - timedelta(minutes=10)
+    try:
+        assert ahora - gold.corte_ingesta(2) < timedelta(hours=2)     # con marca: solo lo nuevo (más el margen)
+        gold._MARCA["ts"] = ahora - timedelta(days=5)
+        assert ahora - gold.corte_ingesta(2) < timedelta(days=2, minutes=1)   # una marca vieja no amplía la ventana
+    finally:
+        gold._MARCA["ts"] = None

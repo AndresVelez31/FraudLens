@@ -51,9 +51,30 @@ def escribir(spark, df, nombre, particion=None):
     tables.fijar_retencion(spark, ruta(nombre))
 
 
+# Marca de agua de Gold: la llegada (ingest_ts) más reciente que ya está en fact_transacciones. La fija `fijar_marca`
+# al empezar cada paso; None = sin marca (la primera vez, o en las pruebas).
+_MARCA = {"ts": None}
+MARGEN_MARCA = timedelta(hours=1)   # cubre lotes del streaming que se confirman después de la lectura de Gold
+
+
 def corte_ingesta(dias):
-    """Instante desde el que se reprocesa: lo que llegó a Silver en los últimos `dias` días (reloj del servidor)."""
-    return datetime.now(timezone.utc) - timedelta(days=dias)
+    """Instante desde el que se reprocesa: lo que llegó a Silver en los últimos `dias` días (reloj del servidor), pero
+    nunca antes de la marca de agua de Gold menos un margen. Sin la marca, una carga grande (por ejemplo, los 590 mil
+    pagos de IEEE-CIS en un día) se reprocesaba completa en cada corrida y el DAG pasaba su límite de 9 min."""
+    corte = datetime.now(timezone.utc) - timedelta(days=dias)
+    if _MARCA["ts"] is not None:
+        corte = max(corte, _MARCA["ts"] - MARGEN_MARCA)
+    return corte
+
+
+def fijar_marca(spark):
+    """Lee la marca de agua de Gold (max ingest_ts de fact_transacciones) para que el paso procese solo lo nuevo."""
+    _MARCA["ts"] = None
+    if existe(spark, "fact_transacciones"):
+        m = spark.read.format("delta").load(ruta("fact_transacciones")).agg(F.max("ingest_ts")).first()[0]
+        if m is not None:
+            _MARCA["ts"] = m.replace(tzinfo=timezone.utc) if m.tzinfo is None else m
+    log.info("marca de agua de Gold: %s", _MARCA["ts"])
 
 
 def llegadas(df, dias):
@@ -360,6 +381,7 @@ def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     spark = get_spark("fraudlens-gold-" + a.paso)
     try:
+        fijar_marca(spark)
         {"dimensiones": dimensiones, "hechos": hechos}[a.paso](spark, a.dias)
     finally:
         spark.stop()
