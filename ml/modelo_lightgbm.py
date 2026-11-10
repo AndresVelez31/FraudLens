@@ -24,6 +24,8 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import average_precision_score, roc_auc_score
 
+from common import variables
+
 DATOS = "data/ieee-cis"
 SALIDA_DOC = "docs/evaluacion/modelo.json"
 SALIDA_MODELOS = "data/modelos"
@@ -35,10 +37,6 @@ PRECISION_REGLAS = 0.0745
 
 
 # ------------------------------------------------------------------ datos
-COLS_CONTRATO = ["TransactionID", "isFraud", "TransactionDT", "TransactionAmt", "ProductCD", "card1", "addr1",
-                 "P_emaildomain", "D1", "DeviceInfo"]
-
-
 def _leer_compacto(ruta, columnas=None):
     """Lee el CSV por partes y con las columnas numéricas en float32: el dataset completo (~430 columnas) no cabe
     en memoria si se lee de una sola vez en float64."""
@@ -68,43 +66,20 @@ def cargar(carpeta, columnas=None):
     return df
 
 
-def _conteo_ventana(t, g, segundos):
-    """Transacciones del mismo grupo en (t - ventana, t], con t ordenado dentro de cada grupo."""
-    cambios = np.r_[0, np.flatnonzero(g[1:] != g[:-1]) + 1]
-    out = np.empty(len(t), dtype=np.int32)
-    for a, b in zip(cambios, np.r_[cambios[1:], len(g)]):
-        tt = t[a:b]
-        out[a:b] = np.arange(1, b - a + 1) - np.searchsorted(tt, tt - segundos, side="right")
-    return out
+def cargar_eventos(carpeta):
+    """Los mismos eventos que envía el replayer (scripts/preparar_ieee.py), con su etiqueta. Así el modelo
+    "contrato" se entrena exactamente con lo que el streaming recibe."""
+    prep = os.path.join(carpeta, "preparado")
+    ev = pd.read_csv(os.path.join(prep, "eventos.csv.gz"), dtype={"id_dispositivo": str, "region": str, "correo_dominio": str})
+    et = pd.read_csv(os.path.join(prep, "etiquetas.csv.gz"), usecols=["id_transaccion", "isFraud"])
+    df = ev.merge(et, on="id_transaccion", how="inner", validate="1:1")
+    df = df.sort_values(["transaction_dt", "id_transaccion"], kind="mergesort", ignore_index=True)
+    return df.rename(columns={"transaction_dt": "t"})
 
 
 def variables_contrato(df):
-    """Variables que el streaming puede calcular con el evento y la historia previa del cliente (as-of)."""
-    d = df.sort_values(["id_cliente", "TransactionDT"]).copy()
-    t, g = d["TransactionDT"].to_numpy(), d["id_cliente"].to_numpy()
-    for nombre, seg in (("cli_tx_5min", 300), ("cli_tx_1h", 3600), ("cli_tx_24h", 86400)):
-        d[nombre] = _conteo_ventana(t, g, seg)
-    d["cli_tx_previas"] = d.groupby("id_cliente").cumcount()
-    d["cli_seg_desde_anterior"] = d.groupby("id_cliente")["TransactionDT"].diff()
-    prom = (d.set_index("ts").groupby("id_cliente")["TransactionAmt"].rolling("30D", closed="left").mean()
-            .reset_index(level=0, drop=True))
-    d["cli_monto_prom_30d"] = prom.to_numpy()
-    d["monto_vs_prom_30d"] = d["TransactionAmt"] / d["cli_monto_prom_30d"]
-    con_disp = d["DeviceInfo"].notna()
-    d["disp_nuevo_para_cliente"] = (con_disp & ~d.duplicated(["id_cliente", "DeviceInfo"]) & (d["cli_tx_previas"] > 0)).astype(int)
-    d = d.sort_values(["TransactionDT", "TransactionID"])
-    d["disp_tx_previas"] = d.groupby("DeviceInfo").cumcount().where(d["DeviceInfo"].notna())
-    x = pd.DataFrame({
-        "monto": d["TransactionAmt"], "log_monto": np.log1p(d["TransactionAmt"]),
-        "tipo": d["ProductCD"].astype("category"), "region": d["addr1"].astype("category"),
-        "correo_dominio": d["P_emaildomain"].astype("category"), "tiene_dispositivo": con_disp.astype(int),
-        "hora": (d["TransactionDT"] // 3600) % 24, "dia_semana": (d["TransactionDT"] // 86400) % 7,
-        "cli_tx_5min": d["cli_tx_5min"], "cli_tx_1h": d["cli_tx_1h"], "cli_tx_24h": d["cli_tx_24h"],
-        "cli_tx_previas": d["cli_tx_previas"], "cli_seg_desde_anterior": d["cli_seg_desde_anterior"],
-        "cli_monto_prom_30d": d["cli_monto_prom_30d"], "monto_vs_prom_30d": d["monto_vs_prom_30d"],
-        "disp_nuevo_para_cliente": d["disp_nuevo_para_cliente"], "disp_tx_previas": d["disp_tx_previas"],
-    }, index=d.index)
-    return x.loc[df.index]
+    """Variables que el streaming puede calcular con el evento y la historia previa (common/variables.py)."""
+    return variables.calcular(df)
 
 
 def variables_vesta(df):
@@ -125,7 +100,20 @@ def entrenar(x, y, particion):
         colsample_bytree=0.8, reg_lambda=1.0, random_state=42, verbose=-1)
     modelo.fit(x.iloc[i_fit], y[i_fit], eval_set=[(x.iloc[i_val], y[i_val])], eval_metric="auc",
                callbacks=[lgb.early_stopping(100, verbose=False)])
+    modelo.indices_validacion_ = i_val
     return modelo
+
+
+# Tasa de alertas objetivo de R4 en el streaming. Con R2 y R3 (~10 por cada 1.000 en prueba) el total queda cerca del
+# presupuesto de 46,4 de las reglas calibradas: es el escenario C de la comparación final (F3).
+R4_ALERTAS_POR_MIL = 35
+
+
+def umbral_r4(modelo, x, tasa_por_mil=R4_ALERTAS_POR_MIL):
+    """Puntaje a partir del cual R4 alerta, elegido para que en la validación (último 10 % del entrenamiento)
+    alerte `tasa_por_mil` de cada 1.000 transacciones. Usa solo los puntajes, no las etiquetas, y nunca la prueba."""
+    s = modelo.predict_proba(x.iloc[modelo.indices_validacion_])[:, 1]
+    return float(np.quantile(s, 1 - tasa_por_mil / 1000))
 
 
 def punto_operacion(y, score, monto, alertadas):
@@ -180,13 +168,18 @@ def main():
     os.makedirs(SALIDA_MODELOS, exist_ok=True)
     puntajes = None
     # Cada modelo carga solo lo que necesita, para no tener las ~430 columnas en memoria dos veces.
-    for nombre, construir, columnas in (("contrato", variables_contrato, COLS_CONTRATO), ("vesta", variables_vesta, None)):
-        df = cargar(a.datos, columnas)
-        y, monto, particion = df["isFraud"].to_numpy(), df["TransactionAmt"].to_numpy(), df["particion"].to_numpy()
-        ids = df["TransactionID"].to_numpy()
+    for nombre in ("contrato", "vesta"):
+        if nombre == "contrato":
+            df = cargar_eventos(a.datos)
+            x = variables_contrato(df)
+            monto, ids = df["monto"].to_numpy(), df["id_transaccion"].to_numpy()
+        else:
+            df = cargar(a.datos)
+            x = variables_vesta(df)
+            monto, ids = df["TransactionAmt"].to_numpy(), ("T" + df["TransactionID"].astype(str)).to_numpy()
+        y, particion = df["isFraud"].to_numpy(), df["particion"].to_numpy()
         salida["particion_prueba"] = {"transacciones": int((particion == "prueba").sum()),
                                       "tasa_base": round(float(y[particion == "prueba"].mean()), 5)}
-        x = construir(df)
         del df
         modelo = entrenar(x, y, particion)
         r = evaluar(modelo, x, y, monto, particion)
@@ -194,9 +187,16 @@ def main():
         r["importancia_top10_pct"] = importancia(modelo, x)
         salida["modelos"][nombre] = r
         modelo.booster_.save_model(os.path.join(SALIDA_MODELOS, "lightgbm_%s.txt" % nombre))
+        if nombre == "contrato":   # lo que necesita el streaming para la regla R4 (tarea D5)
+            r["r4"] = {"umbral": round(umbral_r4(modelo, x), 6), "alertas_por_mil_objetivo": R4_ALERTAS_POR_MIL,
+                       "variables": variables.COLUMNAS}
+            with open(os.path.join(SALIDA_MODELOS, "lightgbm_contrato.json"), "w", encoding="utf-8") as f:
+                json.dump(r["r4"], f, ensure_ascii=False, indent=2)
         te = particion == "prueba"
         if puntajes is None:
-            puntajes = pd.DataFrame({"id_transaccion": "T" + pd.Series(ids[te]).astype(str)})
+            puntajes = pd.DataFrame({"id_transaccion": ids[te]})
+        else:
+            assert (puntajes["id_transaccion"].to_numpy() == ids[te]).all(), "los modelos no ordenan igual la prueba"
         puntajes["puntaje_" + nombre] = puntajes_prueba(modelo, x, particion)
         print(nombre, json.dumps({k: r[k] for k in ("auc_roc", "auc_pr", "arboles", "variables")}),
               "| presupuesto:", json.dumps(r["mismo_presupuesto_que_reglas"]), flush=True)

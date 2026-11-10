@@ -9,8 +9,8 @@ Evento JSON publicado en el topic `transacciones` (clave de Kafka = id_cliente):
 
 Con datos reales de IEEE-CIS (producer/replayer.py), `tipo` es el tipo de producto (W, C, R, H, S), `id_comercio` es ese
 mismo producto, `ciudad` es la región anonimizada (`addr1`) e `id_dispositivo` puede venir vacío: solo el 20 % de las
-transacciones trae dispositivo. El replayer agrega `ts_emision`, `region` y `correo_dominio`, que por ahora el
-streaming ignora (ver docs/datos/ieee-cis.md).
+transacciones trae dispositivo. El replayer agrega `ts_emision`, `region` y `correo_dominio`. El streaming lee
+`correo_dominio` para la regla R4 (el modelo); los otros dos por ahora se ignoran (ver docs/datos/ieee-cis.md).
 """
 from pyspark.sql.types import DoubleType, StringType, StructField, StructType
 
@@ -33,6 +33,7 @@ EVENTO = StructType(
         StructField("documento", StringType()),
         StructField("telefono", StringType()),
         StructField("correo", StringType()),
+        StructField("correo_dominio", StringType()),   # IEEE-CIS: lo usa el modelo de R4 (no se guarda en Silver)
         StructField(CORRUPTO, StringType()),
     ]
 )

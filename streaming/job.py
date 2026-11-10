@@ -2,7 +2,8 @@
 
 Dos consultas de streaming (cada una con su checkpoint en el lakehouse):
 
-  1. `ingesta`: Kafka -> Bronze -> Silver (+ DLQ y cuarentena) y reglas R2 y R3 (join stream-static con Gold).
+  1. `ingesta`: Kafka -> Bronze -> Silver (+ DLQ y cuarentena), reglas R2 y R3 (join stream-static con Gold) y R4
+     (puntaje del modelo LightGBM, common/r4.py) si hay un modelo publicado en models/r4/.
      Corre en foreachBatch cada 5 s; todo lo que escribe es idempotente (MERGE / PutItem condicional), así que
      si el job muere a mitad de un lote, al reiniciar desde el checkpoint no queda nada duplicado.
   2. `r1_ventanas`: lee Silver como stream (ya sin duplicados) y mantiene las ventanas deslizantes de 5 min por
@@ -18,7 +19,7 @@ import time
 from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 
-from common import alerts, config, lake, pii, rules, schema, tables
+from common import alerts, config, lake, pii, r4, rules, schema, tables
 from common.spark import get_spark
 
 log = logging.getLogger("fraudlens.streaming")
@@ -80,7 +81,7 @@ def _existe(spark, path):
 # --------------------------------------------------------------------------------------------------
 # Consulta 1: ingesta + R2 + R3
 # --------------------------------------------------------------------------------------------------
-def procesar_lote(spark):
+def procesar_lote(spark, modelo_r4=None):
     version = config.RULE_VERSION
 
     def _lote(batch_df, batch_id):
@@ -177,13 +178,25 @@ def procesar_lote(spark):
                 partes.append(rules.r3_alertas(tx, lista, version))
             else:
                 log.warning("R3 omitida: no hay lista de riesgo cargada (corre catalogos_diario)")
+            if modelo_r4 is not None:
+                correo = c.where(~F.col("ilegible") & F.col("motivo").isNull()).select(
+                    F.col("e.id_transaccion").alias("id_transaccion"), F.col("e.correo_dominio").alias("correo_dominio"),
+                ).dropDuplicates(["id_transaccion"])
+                tx_r4 = validas.select(
+                    "id_transaccion", "ts_evento", "id_cliente", "id_comercio", "id_dispositivo", "monto", "tipo",
+                    F.col("ciudad").alias("region"), "kafka_partition", "kafka_offset",
+                ).join(correo, "id_transaccion", "left")
+                silver = spark.read.format("delta").load(tables.ruta("silver_transacciones"))
+                a4 = r4.alertas(spark, tx_r4, silver, modelo_r4, version)
+                if a4 is not None:
+                    partes.append(a4)
             if partes:
                 alertas = partes[0]
                 for p in partes[1:]:
                     alertas = alertas.unionByName(p)
                 total, nuevas = alerts.publicar(spark, alertas, batch_id)
                 if total:
-                    log.info("lote %s: %d alertas R2/R3 (%d nuevas)", batch_id, total, nuevas)
+                    log.info("lote %s: %d alertas R2/R3/R4 (%d nuevas)", batch_id, total, nuevas)
 
         marca("reglas")
         n_validas = locals().get("n_validas", 0)
@@ -220,6 +233,10 @@ def main():
     spark.conf.set("spark.sql.streaming.stopGracefullyOnShutdown", "true")
     config.pii_key()  # falla pronto si falta la clave
     tables.asegurar_tablas(spark)
+    modelo_r4 = r4.cargar()
+    if modelo_r4 is None:
+        log.warning("R4 omitida: no hay modelo en %s (entrena con ml/modelo_lightgbm.py y publica con "
+                    "`python -m common.r4 publicar`)", config.lake("models", "r4"))
 
     kafka = (
         spark.readStream.format("kafka")
@@ -234,7 +251,7 @@ def main():
 
     q_ingesta = (
         kafka.writeStream.queryName("ingesta")
-        .foreachBatch(procesar_lote(spark))
+        .foreachBatch(procesar_lote(spark, modelo_r4))
         .option("checkpointLocation", config.lake("checkpoints", "ingesta"))
         .trigger(processingTime=trigger)
         .start()
