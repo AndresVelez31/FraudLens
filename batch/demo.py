@@ -84,9 +84,12 @@ def main():
             if not a.sufijo:
                 ap.error("limpiar necesita --sufijo")
             fin = "-" + a.sufijo
+            from batch.gold import existe, ruta as ruta_gold
+            rutas = [tables.ruta(n) for n in ["silver_transacciones", "silver_alertas"]]
+            rutas += [ruta_gold(n) for n in ["fact_transacciones", "fact_alertas"] if existe(spark, n)]
             ids = set()
-            for nombre in ["silver_transacciones", "silver_alertas"]:
-                t = spark.read.format("delta").load(tables.ruta(nombre))
+            for ruta in rutas:
+                t = spark.read.format("delta").load(ruta)
                 ids |= {r[0] for r in t.where(t.id_transaccion.endswith(fin)).select("id_transaccion").distinct().collect()}
             ids = sorted(ids)
         # La lista va en memoria (unos miles de ids): un DataFrame leído de Silver se vaciaría al borrar de Silver.
