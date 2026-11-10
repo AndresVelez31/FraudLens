@@ -30,6 +30,8 @@ x-env: &env
   RULE_VERSION: ${RULE_VERSION:-v1}
   SPARK_MASTER: ${SPARK_MASTER:-local[2]}
   N_CLIENTES: ${N_CLIENTES:-20000}
+  CATALOGOS_ORIGEN: ${CATALOGOS_ORIGEN:-}
+  ZONA_HORARIA: ${ZONA_HORARIA:-America/Bogota}
   N_COMERCIOS: ${N_COMERCIOS:-300}
 
 x-spark: &spark-image
@@ -169,6 +171,12 @@ services:
           [ "$$ok" = 1 ]
         fi
         # En AWS el bucket, la tabla y el topic ya existen (se crean una vez desde la consola o con crear_recursos.py --todo).
+        if [ -n "$${CATALOGOS_ORIGEN}" ]; then
+          # $atos reales: los catálogos de IEEE-CIS que dejó scripts/preparar_ieee.py en el lake reemplazan a los
+          # sintéticos. La lista de riesgo (riesgo_v100.csv) ya está en landing; no se sube la sintética.
+          python -m producer.catalogo --postgres --desde-csv "$${CATALOGOS_ORIGEN}" --reemplazar
+          exit 0
+        fi
         python -m producer.catalogo --postgres --clientes $${N_CLIENTES:-20000} --comercios $${N_COMERCIOS:-300} &&
         mkdir -p /tmp/lr && python -m producer.catalogo --clientes 0 --lista-riesgo 1 --destino /tmp/lr &&
         python - <<'PY'

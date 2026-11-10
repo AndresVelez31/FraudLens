@@ -5,7 +5,8 @@ Controles:
   2. Silver sin transacciones duplicadas (exactly-once efectivo).
   3. Silver sin alertas duplicadas.
   4. Gold sin transacciones duplicadas y sin llaves nulas.
-  5. Conciliación: Gold tiene todas las transacciones de Silver de los últimos días.
+  5. Conciliación: Gold tiene todas las transacciones que llegaron a Silver en los últimos días (por ingest_ts, no
+     por fecha del pago: así también cubre la reproducción de datos históricos).
 """
 import argparse
 import logging
@@ -30,7 +31,7 @@ def verificar(spark, ventana_min=60, dias=2):
     """Devuelve la lista de problemas encontrados (vacía si todo está bien) y las métricas."""
     problemas, m = [], {}
     corte = datetime.now(timezone.utc) - timedelta(minutes=ventana_min)
-    f0 = (datetime.now(timezone.utc) - timedelta(days=dias)).date().isoformat()
+    llegada = F.col("ingest_ts") >= F.lit(datetime.now(timezone.utc) - timedelta(days=dias))
 
     bronce = leer(spark, tables.ruta("bronze_transacciones")).where(F.col("ingest_ts") >= F.lit(corte))
     cuar = leer(spark, tables.ruta("silver_cuarentena")).where(F.col("ingest_ts") >= F.lit(corte))
@@ -44,7 +45,7 @@ def verificar(spark, ventana_min=60, dias=2):
         if tasa > UMBRAL_RECHAZO:
             problemas.append("tasa de rechazo %.2f%% supera el %.1f%%" % (100 * tasa, 100 * UMBRAL_RECHAZO))
 
-    silver = leer(spark, tables.ruta("silver_transacciones")).where(F.col("fecha") >= f0)
+    silver = leer(spark, tables.ruta("silver_transacciones")).where(llegada)
     n_silver = silver.count()
     dup_silver = n_silver - silver.select("id_transaccion").distinct().count()
     m.update(silver_recientes=n_silver, duplicados_silver=dup_silver)
@@ -57,7 +58,7 @@ def verificar(spark, ventana_min=60, dias=2):
     if dup_al:
         problemas.append("Silver tiene %d alertas duplicadas" % dup_al)
 
-    gold = leer(spark, config.lake("gold", "fact_transacciones")).where(F.col("fecha") >= f0)
+    gold = leer(spark, config.lake("gold", "fact_transacciones")).where(llegada)
     n_gold = gold.count()
     dup_gold = n_gold - gold.select("id_transaccion").distinct().count()
     nulos = gold.where(F.col("id_cliente").isNull() | F.col("id_comercio").isNull() | F.col("id_tiempo").isNull()).count()

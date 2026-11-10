@@ -7,6 +7,10 @@ Uso:
   python -m producer.catalogo --clientes 20000 --comercios 300 --postgres     # siembra PostgreSQL (JDBC lo extrae)
   python -m producer.catalogo --clientes 20000 --csv-dir /ruta/landing/catalogos_csv
   python -m producer.catalogo --lista-riesgo 1 --destino /ruta/landing/listas_riesgo
+
+Con los datos reales (IEEE-CIS), los catálogos salen de scripts/preparar_ieee.py y se cargan tal cual:
+  python -m producer.catalogo --desde-csv data/ieee-cis/preparado/catalogos --postgres --reemplazar
+`--reemplazar` borra antes los clientes y comercios sintéticos, para que no se mezclen con los reales.
 """
 import argparse
 import csv
@@ -153,6 +157,57 @@ def sembrar_postgres(n_clientes, n_comercios):
     print("PostgreSQL sembrado: %d clientes, %d comercios" % (n_clientes, n_comercios + N_COMERCIOS_RIESGO))
 
 
+def leer_csv(ruta, columnas):
+    """Filas de un CSV de catálogo (ruta local o s3a://) como tuplas en el orden de `columnas`; vacío -> NULL."""
+    if ruta.startswith(("s3a://", "s3://")):
+        import io
+
+        from common import lake
+
+        texto = lake.leer_texto(ruta)
+        if texto is None:
+            raise FileNotFoundError(ruta)
+        f = io.StringIO(texto, newline="")
+    else:
+        f = open(ruta, newline="", encoding="utf-8")
+    with f:
+        for fila in csv.DictReader(f):
+            yield tuple(fila[c] if fila.get(c) not in ("", None) else None for c in columnas)
+
+
+def sembrar_postgres_csv(carpeta, reemplazar=False):
+    """Carga clientes.csv y comercios.csv (p. ej. los de IEEE-CIS) en PostgreSQL. Idempotente (upsert)."""
+    import psycopg2
+    from psycopg2.extras import execute_values
+
+    conn = psycopg2.connect(
+        host=os.environ.get("POSTGRES_HOST", "localhost"), port=os.environ.get("POSTGRES_PORT", "5432"),
+        dbname=os.environ.get("POSTGRES_DB", "fraudlens"), user=os.environ.get("POSTGRES_USER", "fraudlens"),
+        password=os.environ["POSTGRES_PASSWORD"],
+    )
+    clientes = list(leer_csv(carpeta.rstrip("/") + "/clientes.csv", COLS_CLIENTES))
+    comercios = list(leer_csv(carpeta.rstrip("/") + "/comercios.csv", COLS_COMERCIOS))
+    with conn, conn.cursor() as cur:
+        if reemplazar:
+            cur.execute("TRUNCATE clientes, comercios")
+        execute_values(
+            cur,
+            "INSERT INTO clientes (%s) VALUES %%s ON CONFLICT (id_cliente) DO UPDATE SET ciudad = EXCLUDED.ciudad,"
+            " segmento = EXCLUDED.segmento, actualizado_ts = now()" % ", ".join(COLS_CLIENTES),
+            clientes, page_size=5000,
+        )
+        execute_values(
+            cur,
+            "INSERT INTO comercios (%s) VALUES %%s ON CONFLICT (id_comercio) DO UPDATE SET nombre = EXCLUDED.nombre,"
+            " ciudad = EXCLUDED.ciudad, categoria = EXCLUDED.categoria" % ", ".join(COLS_COMERCIOS),
+            comercios, page_size=5000,
+        )
+        cur.execute("SELECT (SELECT count(*) FROM clientes), (SELECT count(*) FROM comercios)")
+        n_cli, n_com = cur.fetchone()
+    print("PostgreSQL desde %s: %d clientes y %d comercios cargados; la tabla tiene %d y %d"
+          % (carpeta, len(clientes), len(comercios), n_cli, n_com))
+
+
 def cambiar_atributos(n):
     """Cambia ciudad y segmento de n clientes en PostgreSQL: la siguiente carga genera versiones nuevas (SCD2)."""
     import psycopg2
@@ -176,11 +231,15 @@ def main():
     ap.add_argument("--comercios", type=int, default=300)
     ap.add_argument("--postgres", action="store_true", help="siembra PostgreSQL (usa POSTGRES_* del entorno)")
     ap.add_argument("--cambiar-clientes", type=int, default=0, help="modifica N clientes en PostgreSQL (demo de SCD2)")
+    ap.add_argument("--desde-csv", help="carpeta o prefijo s3a:// con clientes.csv y comercios.csv a cargar en PostgreSQL")
+    ap.add_argument("--reemplazar", action="store_true", help="con --desde-csv: borra antes los catálogos existentes")
     ap.add_argument("--csv-dir", help="exporta clientes.csv y comercios.csv (modo CSV de catalogos_diario)")
     ap.add_argument("--lista-riesgo", type=int, help="escribe riesgo_vNNN.csv con esa versión")
     ap.add_argument("--destino", help="carpeta destino de la lista de riesgo")
     a = ap.parse_args()
-    if a.postgres:
+    if a.postgres and a.desde_csv:
+        sembrar_postgres_csv(a.desde_csv, a.reemplazar)
+    elif a.postgres:
         sembrar_postgres(a.clientes, a.comercios)
     if a.cambiar_clientes:
         cambiar_atributos(a.cambiar_clientes)
