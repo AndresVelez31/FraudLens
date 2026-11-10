@@ -13,6 +13,7 @@ ALERTAS = [
     ("a3", "C1", "R1", "2026-11-04T12:00:00.000Z"),
     ("a4", "C2", "R3", "2026-11-04T13:00:00.000Z"),
     ("a5", "C2", "R1", "2026-11-04T14:00:00.000Z"),
+    ("a6", "C3", "R4", "2026-11-04T09:00:00.000Z"),   # la más antigua: no cambia las otras pruebas
 ]
 
 
@@ -47,6 +48,10 @@ def test_por_cliente_mas_recientes_primero(cliente):
 
 def test_por_regla(cliente):
     assert sorted(ids(cliente.get("/alertas", params={"regla": "R1"}))) == ["a1", "a3", "a5"]
+
+
+def test_por_regla_r4_del_modelo(cliente):
+    assert ids(cliente.get("/alertas", params={"regla": "R4"})) == ["a6"]
 
 
 def test_por_cliente_y_regla(cliente):
