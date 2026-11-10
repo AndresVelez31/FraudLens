@@ -81,7 +81,7 @@ def _existe(spark, path):
 # --------------------------------------------------------------------------------------------------
 # Consulta 1: ingesta + R2 + R3
 # --------------------------------------------------------------------------------------------------
-def procesar_lote(spark, modelo_r4=None):
+def procesar_lote(spark, modelo_r4=None, app_id=None):
     version = config.RULE_VERSION
 
     def _lote(batch_df, batch_id):
@@ -114,7 +114,8 @@ def procesar_lote(spark, modelo_r4=None):
             desde[0] = ahora
 
         # 1) Bronze: el evento crudo, sin tocar, con su topic/partición/offset (RF-04). Admite duplicados.
-        raw.write.format("delta").mode("append").save(tables.ruta("bronze_transacciones"))
+        # Idempotente: si el lote se repite tras una caída, no se escribe dos veces (txnAppId + txnVersion).
+        tables.escribir_una_vez(raw, tables.ruta("bronze_transacciones"), (app_id or "fraudlens-ingesta") + "-bronze", batch_id)
         marca("bronze")
 
         c = clasificar(raw).cache()
@@ -127,22 +128,29 @@ def procesar_lote(spark, modelo_r4=None):
         marca("clasificar")
 
         # 2) JSON ilegible -> DLQ (RF-05). Se publica el texto original con la misma clave.
-        ilegibles = c.where("ilegible").select("key", "value")
+        # Kafka no admite escrituras transaccionales de Delta: si el lote se repite, el mensaje puede llegar dos
+        # veces. Cada uno lleva su topic/partición/offset de origen en los encabezados para deduplicar al leer la DLQ.
+        ilegibles = c.where("ilegible").select("key", "value", F.array(
+            F.struct(F.lit("origen_topic").alias("key"), F.col("kafka_topic").cast("binary").alias("value")),
+            F.struct(F.lit("origen_particion").alias("key"), F.col("kafka_partition").cast("string").cast("binary").alias("value")),
+            F.struct(F.lit("origen_offset").alias("key"), F.col("kafka_offset").cast("string").cast("binary").alias("value")),
+        ).alias("headers"))
         if n_dlq:
             (
                 ilegibles.write.format("kafka")
                 .option("kafka.bootstrap.servers", config.KAFKA_BOOTSTRAP)
                 .option("topic", config.KAFKA_DLQ_TOPIC)
+                .option("includeHeaders", "true")
                 .save()
             )
 
         # 3) Incumple calidad -> cuarentena con el motivo (RF-05, RNF-08).
         cuarentena = c.where(~F.col("ilegible") & F.col("motivo").isNotNull())
         if n_cuar:
-            cuarentena.select(
+            tables.escribir_una_vez(cuarentena.select(
                 "value", "motivo", "id_transaccion", "kafka_topic", "kafka_partition", "kafka_offset",
                 "ingest_ts", "batch_id", "source_system",
-            ).write.format("delta").mode("append").save(tables.ruta("silver_cuarentena"))
+            ), tables.ruta("silver_cuarentena"), (app_id or "fraudlens-ingesta") + "-cuarentena", batch_id)
 
         # 4) Válidos -> Silver con MERGE por id_transaccion (deduplica contra todo lo anterior).
         marca("dlq_cuarentena")
@@ -255,7 +263,7 @@ def main():
 
     q_ingesta = (
         kafka.writeStream.queryName("ingesta")
-        .foreachBatch(procesar_lote(spark, modelo_r4))
+        .foreachBatch(procesar_lote(spark, modelo_r4, tables.id_de_escritor("ingesta")))
         .option("checkpointLocation", config.lake("checkpoints", "ingesta"))
         .trigger(processingTime=trigger)
         .start()
