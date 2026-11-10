@@ -5,8 +5,10 @@
 #   bash scripts/demo_aws.sh encender           # enciende las dos EC2 y espera a que respondan por SSM (~3 min)
 #   bash scripts/demo_aws.sh preparar           # deja main, NOTIFICAR_DESDE=lambda y el DAG activo (ensayo, ~10 min)
 #   bash scripts/demo_aws.sh estado             # contenedores de las dos EC2 y últimas corridas del DAG
-#   bash scripts/demo_aws.sh enviar [N] [sufijo]  # N pagos reales de la partición de prueba como pagos nuevos (def. 2000)
+#   bash scripts/demo_aws.sh reservar [N]       # saca del sistema los últimos N pagos del dataset (def. 2000; antes de la demo)
+#   bash scripts/demo_aws.sh enviar [N]         # envía esos N pagos: llegan de verdad, con su tasa real de alertas
 #   bash scripts/demo_aws.sh repetir [N]        # reenvía N pagos ya cargados: Silver no crece (idempotencia)
+#   bash scripts/demo_aws.sh limpiar SUFIJO     # borra pagos de prueba enviados con un sufijo en el id
 #   bash scripts/demo_aws.sh streaming          # progreso del replayer y los últimos micro-lotes de Spark
 #   bash scripts/demo_aws.sh alertas [regla]    # últimas alertas por regla desde la API (def. R4)
 #   bash scripts/demo_aws.sh gold               # corre el DAG fraude_pipeline y muestra el estado de cada tarea
@@ -15,13 +17,15 @@
 #   bash scripts/demo_aws.sh apagar             # detiene las dos EC2
 #
 # Correos: con NOTIFICAR_DESDE=lambda la Lambda manda un correo resumen por lote (junta hasta 5 min), así que 2.000
-# pagos dan unas 90 alertas y de 1 a 4 correos.
+# pagos dan unas 90 alertas y de 1 a 4 correos. `enviar` debe usar el mismo N que `reservar`.
 set -euo pipefail
 
 export AWS_PROFILE="${AWS_PROFILE:-fraudlens}"
 export AWS_REGION="${AWS_REGION:-us-east-2}"
 EC2_A="${EC2_A:-i-05f1133376ba2ac37}"   # streaming: Kafka, Spark, replayer
 EC2_B="${EC2_B:-i-0eba9e79f7ea9e9f6}"   # batch: PostgreSQL, Airflow, API
+BUCKET="${BUCKET:-fraudlens-lake-216408407230}"
+TABLA="${TABLA:-alertas_fraude}"
 RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
 TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
 if command -v cygpath >/dev/null 2>&1; then TMPW="$(cygpath -m "$TMPD")"; else TMPW="$TMPD"; fi   # el AWS CLI de Windows no lee /tmp
@@ -44,8 +48,9 @@ remoto() {
   [ "$s" = Success ]
 }
 
-# Deja la última versión de main en la EC2 sin tocar el .env (git como el dueño del clon).
-ACTUALIZAR='u=$(stat -c %U /opt/fraudlens); sudo -u "$u" git fetch -q origin && sudo -u "$u" git checkout -q main && sudo -u "$u" git reset -q --hard origin/main && git log --oneline -1'
+# Deja la última versión de main en la EC2 sin tocar el .env. Corre como root (SSM), así que se marca el clon como
+# seguro; si la actualización falla, el comando se detiene en lugar de levantar el código viejo.
+ACTUALIZAR='set -e; export HOME=/root; git config --global --get-all safe.directory | grep -qx /opt/fraudlens || git config --global --add safe.directory /opt/fraudlens; git fetch -q origin; git checkout -q main; git reset -q --hard origin/main; git log --oneline -1'
 PONER='poner() { if grep -q "^$1=" .env; then sed -i "s|^$1=.*|$1=$2|" .env; else echo "$1=$2" >> .env; fi; }'
 DAG='docker compose exec -T airflow-scheduler airflow'
 
@@ -79,13 +84,37 @@ sleep 20; $DAG dags unpause fraude_pipeline 2>&1 | tail -1" 900
     echo "== EC2-B"; remoto "$EC2_B" "docker ps --format '{{.Names}}  {{.Status}}'
 $DAG dags list-runs -d fraude_pipeline -o plain 2>/dev/null | awk 'NR>1 && NR<5 {print \$3, \$5}'"
     ;;
+  reservar|limpiar)
+    if [ "$caso" = reservar ]; then args="--n ${1:-2000}"; else [ -n "${1:-}" ] || { echo "uso: limpiar SUFIJO"; exit 1; }; args="--sufijo $1"; fi
+    remoto "$EC2_B" "set -o pipefail; docker compose exec -T airflow-scheduler python -m batch.demo $caso $args 2>&1 | grep -E 'fraudlens.demo|Error|error' | cut -c1-200" 900
+    # Las alertas de esos pagos en DynamoDB se borran desde aquí, con la sesión del equipo (el rol de la EC2 no puede
+    # recorrer la tabla). La lista de ids la dejó batch.demo en el lake.
+    aws s3 cp --quiet "s3://$BUCKET/demo/ids_demo.txt" "$TMPW/ids.txt"
+    aws dynamodb scan --table-name "$TABLA" --projection-expression "id_alerta, id_transaccion" --output json > "$TMPD/scan.json"
+    python - "$TMPD/ids.txt" "$TMPD/scan.json" "$TMPD" "$TABLA" <<'PY'
+import json, sys
+ids = set(open(sys.argv[1], encoding="utf-8").read().split())
+items = json.load(open(sys.argv[2], encoding="utf-8"))["Items"]
+borrar = [i["id_alerta"]["S"] for i in items if i.get("id_transaccion", {}).get("S") in ids]
+for n in range(0, len(borrar), 25):
+    pedido = {sys.argv[4]: [{"DeleteRequest": {"Key": {"id_alerta": {"S": a}}}} for a in borrar[n:n + 25]]}
+    json.dump(pedido, open("%s/borrar_%04d.json" % (sys.argv[3], n // 25), "w"))
+print("DynamoDB: %d alertas de esos pagos (de %d en la tabla)" % (len(borrar), len(items)))
+PY
+    for f in "$TMPD"/borrar_*.json; do
+      [ -e "$f" ] || break
+      quedan=$(aws dynamodb batch-write-item --request-items "file://$TMPW/$(basename "$f")" --query "length(UnprocessedItems.*[] || \`[]\`)" --output text)
+      [ "$quedan" = 0 ] || echo "aviso: $quedan borrados quedaron pendientes en $(basename "$f")"
+    done
+    echo "DynamoDB: listo"
+    ;;
   enviar|repetir)
     n="${1:-2000}"
-    if [ "$caso" = enviar ]; then sufijo="--sufijo ${2:-demo$(date +%m%d%H%M)}"; desde=100000; else sufijo=""; desde=0; fi
+    if [ "$caso" = enviar ]; then cuales="--ultimos $n"; else cuales="--limite $n"; fi
     remoto "$EC2_A" "docker rm -f fraudlens-replayer >/dev/null 2>&1 || true
 docker compose run -d --no-deps --name fraudlens-replayer producer python -m producer.replayer \
-  --particion prueba --saltar $desde --limite $n --factor 0 --tasa-max 50 --malos-pct 1 $sufijo 2>&1 | tail -1
-echo 'replayer en marcha: $n pagos a 50 por segundo ($sufijo)'"
+  --particion prueba $cuales --factor 0 --tasa-max 500 --malos-pct 1 2>&1 | tail -1
+echo 'replayer en marcha: $n pagos a 500 por segundo ($cuales)'"
     ;;
   streaming)
     remoto "$EC2_A" "echo '-- replayer'; docker logs fraudlens-replayer 2>&1 | grep -E 'enviad|\"enviados\"|error' | tail -2
