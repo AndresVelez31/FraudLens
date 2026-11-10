@@ -14,6 +14,8 @@
 #   bash scripts/demo_aws.sh gold               # corre el DAG fraude_pipeline y muestra el estado de cada tarea
 #   bash scripts/demo_aws.sh consulta [p4|p5|p6|p7|p7r]  # pregunta de negocio sobre Gold en Athena (def. p6)
 #   bash scripts/demo_aws.sh airflow            # abre Airflow en http://localhost:8081 (necesita el plugin de SSM)
+#   bash scripts/demo_aws.sh api                # abre la API en http://localhost:8080/docs
+#   bash scripts/demo_aws.sh spark              # abre la interfaz de Spark Streaming en http://localhost:4040
 #   bash scripts/demo_aws.sh apagar             # detiene las dos EC2
 #
 # Correos: con NOTIFICAR_DESDE=lambda la Lambda manda un correo resumen por lote (junta hasta 5 min), así que 2.000
@@ -71,6 +73,7 @@ case "$caso" in
     echo "== EC2-A (streaming)"
     remoto "$EC2_A" "$ACTUALIZAR; $PONER
 poner RULE_VERSION ieee; poner REGLAS_ACTIVAS R2,R3,R4; poner NOTIFICAR_DESDE lambda; poner STARTING_OFFSETS latest
+poner SPARK_UI_ENABLED true
 grep -E '^(COMPOSE_PROFILES|RULE_VERSION|REGLAS_ACTIVAS|NOTIFICAR_DESDE|STARTING_OFFSETS)=' .env
 docker compose up -d --build 2>&1 | tail -3" 900
     echo "== EC2-B (batch)"
@@ -166,14 +169,15 @@ import json, sys
 for r in json.load(sys.stdin)["ResultSet"]["Rows"]:
     print(" | ".join(c.get("VarCharValue", "") for c in r["Data"]))'
     ;;
-  airflow|api)
+  airflow|api|spark)
     # Recién instalado, el plugin no está en el PATH de las terminales que ya estaban abiertas.
     [ -d "/c/Program Files/Amazon/SessionManagerPlugin/bin" ] && PATH="$PATH:/c/Program Files/Amazon/SessionManagerPlugin/bin"
     command -v session-manager-plugin >/dev/null 2>&1 || {
       echo "Falta el Session Manager plugin del AWS CLI (instalador oficial de AWS). Sin él, usa: bash scripts/demo_aws.sh gold"; exit 1; }
-    if [ "$caso" = airflow ]; then puerto=8081; else puerto=8080; fi
+    # Airflow y la API están en la EC2-B; la interfaz de Spark Streaming, en la EC2-A (pestaña "Structured Streaming").
+    case "$caso" in airflow) puerto=8081; inst="$EC2_B" ;; api) puerto=8080; inst="$EC2_B" ;; spark) puerto=4040; inst="$EC2_A" ;; esac
     echo "$caso en http://localhost:$puerto (Ctrl+C para cerrar el túnel; la API tiene su documentación en /docs)"
-    aws ssm start-session --target "$EC2_B" --document-name AWS-StartPortForwardingSession \
+    aws ssm start-session --target "$inst" --document-name AWS-StartPortForwardingSession \
       --parameters "{\"portNumber\":[\"$puerto\"],\"localPortNumber\":[\"$puerto\"]}"
     ;;
   apagar)
