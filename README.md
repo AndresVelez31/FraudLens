@@ -5,20 +5,33 @@ Detección de fraude en pagos digitales en tiempo real para una billetera digita
 
 Los analistas de riesgo necesitan detectar patrones de fraude en menos de 2 minutos desde la transacción y analizar el
 histórico completo para ajustar las reglas, sin afectar la base operacional. El diseño está en el
-[Entregable 1](docs/entregable1/e1_fraudlens.pdf); este repositorio es la implementación (Entregable 2).
+[Entregable 1](docs/entregable1/e1_fraudlens.pdf); este repositorio es la implementación (Entregable 2), probada en AWS
+con 590.540 pagos reales de IEEE-CIS.
+
+**Entregable 2:** slides en [docs/entregable2/FraudLens_E2.pdf](docs/entregable2/FraudLens_E2.pdf), guion de la demo en
+vivo en [docs/entregable2/demo.md](docs/entregable2/demo.md), guía de defensa, estado del arte y cambios frente al E1
+en [docs/entregable2/](docs/entregable2/README.md).
+
+**Resultado en la partición de prueba:** 20,9 % de precisión y 23,7 % de cobertura (reglas del E1: 6,5 % y 3,3 %),
+32 falsos positivos por cada 1.000 pagos legítimos, 0 alertas repetidas. Latencia P95 de ~202 s: no cumple la meta de
+30 s (causa y arreglo en [cambios_frente_e1.md](docs/entregable2/cambios_frente_e1.md)).
 
 ## Arquitectura
 
-![Arquitectura de FraudLens](docs/entregable1/arquitectura.png)
+![Arquitectura de FraudLens en AWS](docs/entregable2/arquitectura.png)
+
+Editable en [docs/entregable2/arquitectura.drawio](docs/entregable2/arquitectura.drawio). El diagrama del E1 sigue en
+`docs/entregable1/`.
 
 ```
-productor ──► Kafka (3 brokers, key=id_cliente) ──► Spark Structured Streaming ──► Bronze ─► Silver (Delta, S3/MinIO)
-                    └─► DLQ (JSON ilegible)              │  validación + cuarentena          │
-                                                         ├─ R1 (ventana 5 min/1 min), R2, R3 │
-                                                         └─► alertas: DynamoDB (+SNS) y Silver
+replayer IEEE-CIS ─► Kafka (3 brokers, key=id_cliente) ─► Spark Structured Streaming ─► Bronze ─► Silver (Delta, S3)
+                          └─► DLQ (JSON ilegible)            │  validación + cuarentena
+                                                             ├─ R2, R3 (join con Gold) y R4 (LightGBM); R1 apagable
+                                                             └─► alertas: Silver y DynamoDB (escritura condicional)
+DynamoDB Streams ─► Lambda notificador ─► SNS (un correo resumen por lote); lotes fallidos ─► SQS
 PostgreSQL + CSV de riesgo ─► Airflow `catalogos_diario` ─► Bronze/Silver (clientes con HMAC, comercios, lista de riesgo)
-Airflow `fraude_pipeline` (cada 10 min): Silver ─► Gold (estrella) ─► calidad ─► OPTIMIZE/Glue
-API FastAPI  ◄── DynamoDB      Athena/Metabase (AWS) o `batch.consultas` (local) ◄── Gold
+Airflow `fraude_pipeline` (cada 10 min): Silver ─► Gold (estrella) ─► calidad ─► Glue
+Gold ─► Athena ─► Power BI (Import);  API FastAPI ◄── DynamoDB
 ```
 
 | Capa | Herramienta | Código |
@@ -28,16 +41,23 @@ API FastAPI  ◄── DynamoDB      Athena/Metabase (AWS) o `batch.consultas` (
 | Procesamiento | Spark 3.5.1 Structured Streaming + Delta Lake 3.1.0 | `streaming/`, `common/` |
 | Batch y Gold | Spark batch (catálogos, estrella, calidad, reproceso) | `batch/` |
 | Orquestación | Airflow 2.9 (LocalExecutor): `catalogos_diario`, `fraude_pipeline` | `dags/` |
-| Alertas | DynamoDB (+ índices por cliente y por regla), SNS | `common/alerts.py`, `infra/aws/` |
-| Consumo | API FastAPI, consultas P4–P7 (Athena/Spark SQL) | `api/`, `dashboards/athena/`, `batch/consultas.py` |
+| Alertas | DynamoDB (+ índices por cliente y por regla), Lambda notificador desde DynamoDB Streams, SNS, SQS de fallos | `common/alerts.py`, `lambdas/notificador/`, `infra/aws/` |
+| Modelo | LightGBM (regla R4), entrenado con la partición temporal 80/20 | `ml/`, `common/r4.py`, `common/variables.py` |
+| Consumo | Power BI (modo Import sobre Athena), API FastAPI, consultas P4–P7 (Athena/Spark SQL) | `dashboards/`, `api/`, `batch/consultas.py` |
 
 ## Reglas de fraude
 
-| Regla | v1 | v2 (para reprocesar) |
-|---|---|---|
-| R1 ráfaga/monto | más de 5 transacciones o más de $2.000.000 en 5 min (ventana deslizante de 1 min) | más de 4 o más de $1.500.000 |
-| R2 dispositivo nuevo | dispositivo nunca usado por el cliente y monto > 3× su promedio de 30 días | 2,5× |
-| R3 lista de riesgo | comercio o dispositivo en la última versión de la lista | igual |
+La versión de reglas se elige con `RULE_VERSION` y las reglas activas con `REGLAS_ACTIVAS`, sin tocar código. En AWS,
+con IEEE-CIS, corren `RULE_VERSION=ieee` y `REGLAS_ACTIVAS=R2,R3,R4`.
+
+| Regla | ieee (AWS, datos reales) | v1 (datos sintéticos) | v2 (para reprocesar) |
+|---|---|---|---|
+| R1 ráfaga/monto | 3 o más pagos en 5 min; **apagada** (casi no acierta con datos reales) | más de 5 transacciones o más de $2.000.000 en 5 min (ventana deslizante de 1 min) | más de 4 o más de $1.500.000 |
+| R2 dispositivo nuevo | dispositivo nunca usado por el cliente y monto > 1,5× su promedio de 30 días | igual, con 3× | 2,5× |
+| R3 lista de riesgo | comercio o dispositivo en la lista `riesgo_v100` (aprendida con el 80 % inicial) | última versión de la lista | igual |
+| R4 modelo | LightGBM con 17 variables del pago y de la historia del cliente; alerta si el puntaje supera 0,155 | igual | igual |
+
+Precisión de cada regla en la partición de prueba: R4 22,2 %, R3 18,6 %, R2 13,4 %.
 
 ## Cómo correrlo desde cero (local, con Docker)
 
@@ -162,19 +182,19 @@ lista de riesgo v2; calidad; P4–P6; reproceso con v2.
 
 ### Qué se probó y qué no (honestidad técnica)
 
-| Probado | No probado en el entorno de desarrollo |
+| Probado | No probado |
 |---|---|
-| **Con Docker real** (3 brokers de Kafka, MinIO, DynamoDB Local, PostgreSQL, Airflow, API): `docker compose up` levanta; el streaming genera alertas R1/R3 y el DLQ recibe el JSON roto; la API responde; `catalogos_diario` (JDBC + S3A) y `fraude_pipeline` terminan en éxito; consultas P4–P6; con un broker caído el productor no pierde mensajes; `kill -9` al streaming no duplica alertas | Despliegue en AWS (S3, DynamoDB, SNS reales y el LabInstanceProfile) |
-| Prueba end-to-end sin Docker con respuestas conocidas (R2 5/5, R1 sin falsos positivos, duplicados, reproceso con v2) | Athena/Glue y Metabase |
-| Pruebas unitarias (`pytest`, 15) y seudonimización HMAC-SHA-256 | Latencia en una máquina de 4+ vCPU |
+| **En AWS con datos reales:** 590.540 pagos de IEEE-CIS en ~3 h; Silver con 590.540 filas exactas tras 206 reenvíos del replayer; 28.154 alertas sin repetidas; Gold, Glue, Athena y Power BI; Lambda notificador con su camino de fallos a SQS | Carga sostenida de 5.000 pagos/s (RNF-01): se probó a ~50 pagos/s |
+| **Con Docker local** (3 brokers de Kafka, MinIO, DynamoDB Local, PostgreSQL, Airflow, API): `docker compose up` levanta; alertas, DLQ, API, los dos DAG y P4–P6; con un broker caído el productor no pierde mensajes; `kill -9` al streaming no duplica alertas | Latencia P95 < 30 s con R4 activa (se midió ~202 s; ver abajo) |
+| Prueba end-to-end sin Docker con respuestas conocidas (R2 5/5, R1 sin falsos positivos, duplicados, reproceso con v2) y pruebas unitarias (`pytest tests/`) | |
 
 Si algo falla al primer `docker compose up` en su máquina, lo más probable es de empaquetado (red, versión de un jar, permisos de
 volumen, memoria): `docker compose logs <servicio>`.
 
-**Latencia medida (sandbox de 2 núcleos, prueba e2e completa):** evento → alerta, R1 ≈ 11 s; R2 y R3 entre ≈ 22 s y 65 s
-(el máximo incluye lotes acumulados tras reiniciar el job y Spark compitiendo por 2 núcleos). Cumple la meta de 2 min, pero
-**no** garantiza el P95 < 30 s del RNF en ese hardware. En una EC2 de 4+ vCPU debería mejorar; **hay que medirlo en la
-demo** con `python -m batch.consultas p5` y actualizar este párrafo.
+**Latencia medida en AWS (carga real, P5):** desde que el pago se emite hasta la alerta, mediana 109 s y P95 ~202 s.
+Por tramos: envío a Kafka ~0 s, espera en Kafka ~45 s y procesamiento del lote ~68 s. **No cumple** el P95 < 30 s del
+RNF-04. La causa: R4 lee de Silver la historia de los clientes de cada lote. El arreglo es una tabla de estado por
+cliente. Las consultas de Athena sí cumplen: ~3 s leyendo menos de 6 MB.
 
 ## Despliegue en AWS (plan gratuito, us-east-2)
 
@@ -183,7 +203,9 @@ disponibles en ese plan, así que Kafka corre en contenedores sobre la EC2.
 
 **Recursos que ya existen** (creados una vez desde la consola): bucket `fraudlens-lake-216408407230`, base de Glue y
 workgroup de Athena `fraudlens` (límite de 1 GB por consulta), tabla DynamoDB `alertas_fraude` (con Streams y TTL), topic
-SNS `alertas-fraude`, cola SQS `notificador-errores`, rol `fraudlens-ec2` y grupo de seguridad `fraudlens-sg`.
+SNS `alertas-fraude`, rol `fraudlens-ec2` y grupo de seguridad `fraudlens-sg`. La Lambda `fraudlens-notificador`,
+su cola SQS de fallos `fraudlens-notificador-fallos` y la conexión con DynamoDB Streams se despliegan con
+`AWS_PROFILE=fraudlens bash infra/aws/notificador.sh` (idempotente).
 `python infra/aws/crear_recursos.py --todo` crea la base de esos recursos en un proyecto nuevo.
 
 **Dos EC2 m7i-flex.large** (2 vCPU, 8 GB, elegibles en el plan gratuito), en la misma subred, con el perfil de instancia
@@ -203,6 +225,7 @@ Session Manager no está en el grupo `docker`:
 sudo -i
 cd /opt/fraudlens && cp .env.example .env
 # completar POSTGRES_PASSWORD y PII_HMAC_KEY (la MISMA clave PII en las dos EC2) y descomentar el perfil de esa máquina
+# con IEEE-CIS: RULE_VERSION=ieee, REGLAS_ACTIVAS=R2,R3,R4, NOTIFICAR_DESDE=lambda, STARTING_OFFSETS=latest
 docker compose up -d --build
 ```
 
@@ -217,12 +240,24 @@ EventBridge Scheduler; al encenderlas, los contenedores arrancan solos y el stre
 hace falta para reparar las entradas que deja Athena cuando un registro falla.
 
 Athena lee Gold registrado en Glue (`python -m batch.publicar glue`, tarea del DAG `fraude_pipeline`); Power BI se conecta
-a Athena. En local las preguntas P4–P7 se responden con `batch.consultas` (P7: acierto contra el fraude real).
+a Athena en modo Import (`dashboards/powerbi/`, guía en `dashboards/README.md`). En local las preguntas P4–P7 se
+responden con `batch.consultas` (P7: acierto contra el fraude real).
+
+**Demo en vivo en AWS:** `bash scripts/demo_aws.sh` enciende las EC2, manda pagos, muestra Spark, las alertas, el DAG
+y las consultas de Gold, todo por Systems Manager desde el portátil. Guion de 8 minutos en
+[docs/entregable2/demo.md](docs/entregable2/demo.md).
 
 ## Decisiones y diferencias respecto al E1
 
-* **Notificaciones SNS: at-most-once.** Solo se notifican alertas recién creadas en DynamoDB; si el job muere entre el
-  PutItem y el publish, esa alerta existe pero no se notificó. Se prefirió no duplicar avisos al analista.
+Lista completa de cambios, con su porqué y el estado de cada requisito no funcional:
+[docs/entregable2/cambios_frente_e1.md](docs/entregable2/cambios_frente_e1.md). Lo principal:
+
+* **Datos reales y medición:** IEEE-CIS en lugar del productor sintético; partición temporal 80/20 y acierto medido
+  contra la etiqueta, que nunca pasa por Kafka.
+* **Reglas:** versión `ieee` calibrada, R4 con LightGBM y R1 apagada.
+* **Notificaciones:** DynamoDB Streams → Lambda → un correo resumen por lote; si falla tras 2 reintentos, el lote queda
+  en SQS. Spark ya no espera a SNS.
+* **Consumo:** Power BI en modo Import sobre Athena en lugar de Metabase.
 * **Duplicados:** se elimina el reenvío idéntico (`id_transaccion` + `fecha`); Bronze conserva todo lo recibido.
 * **R2 en reproceso es "as-of":** dispositivo nuevo = primera vez que el cliente lo usó; promedio de los 30 días previos
   a cada transacción.
@@ -235,18 +270,22 @@ a Athena. En local las preguntas P4–P7 se responden con `batch.consultas` (P7:
 
 ```
 FraudLens/
-├── docker-compose.yml   ← todo el pipeline local (Kafka×3, MinIO, DynamoDB Local, PostgreSQL, Spark, Airflow, API)
+├── docker-compose.yml   ← todos los servicios, con perfiles streaming (EC2-A) y batch (EC2-B)
+├── compose.local.yml    ← se suma en local: MinIO (como S3) y DynamoDB Local
 ├── .env.example         ← variables (copiar a .env; nunca subir .env)
-├── common/              ← núcleo compartido: config, Spark, esquema, PII, reglas, alertas, tablas Delta
-├── streaming/           ← job de Structured Streaming (Bronze, Silver, R1–R3, alertas)
-├── batch/               ← catálogos, Gold, calidad, reproceso, publicación, consultas P4–P7
+├── common/              ← núcleo compartido: config, Spark, esquema, PII, reglas, R4, variables, alertas, tablas Delta
+├── streaming/           ← job de Structured Streaming (Bronze, Silver, DLQ, cuarentena, R1–R4, alertas)
+├── batch/               ← catálogos, Gold, calidad, reproceso, publicación en Glue, consultas P4–P7
 ├── dags/                ← DAG catalogos_diario y fraude_pipeline
-├── producer/            ← productor y catálogo sintético (con ground truth)
+├── producer/            ← replayer de IEEE-CIS y productor sintético (con ground truth)
+├── ml/                  ← entrenamiento del LightGBM de R4 y comparación de enfoques
+├── lambdas/notificador/ ← Lambda que manda el correo resumen desde DynamoDB Streams
 ├── api/                 ← API de alertas
-├── dashboards/athena/   ← SQL de P4–P7 (Athena y Spark SQL)
-├── infra/               ← Dockerfiles, init.sql de PostgreSQL, creación de recursos AWS
+├── dashboards/          ← SQL de P4–P7 (Athena y Spark SQL) y el reporte de Power BI
+├── infra/               ← Dockerfiles, init.sql de PostgreSQL, recursos y despliegue en AWS
+├── scripts/             ← preparación de IEEE-CIS, demo local (demo.ps1) y demo en AWS (demo_aws.sh)
 ├── tests/               ← pytest y prueba end-to-end sin Docker
-└── docs/                ← E1, bitácora de IA, E2 (slides y guía de defensa)
+└── docs/                ← E1, E2 (slides, demo, guía de defensa, arquitectura), datos, evaluación y bitácora de IA
 ```
 
 ## Equipo

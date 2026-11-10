@@ -31,3 +31,10 @@ def test_registros_danados_van_a_dlq_o_cuarentena():
             except json.JSONDecodeError:
                 pass
     assert tipos == {"cuarentena", "ilegible"}
+
+
+def test_con_sufijo_el_pago_entra_como_uno_nuevo():
+    assert replayer.a_evento(FILA)["id_transaccion"] == "T1"
+    e = replayer.a_evento(FILA, "demo1")
+    assert e["id_transaccion"] == "T1-demo1"
+    assert e["id_cliente"] == "U1_315_10" and e["monto"] == 75.5   # el resto del pago es el mismo
