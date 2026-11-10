@@ -113,8 +113,8 @@ PY
     if [ "$caso" = enviar ]; then cuales="--ultimos $n"; else cuales="--limite $n"; fi
     remoto "$EC2_A" "docker rm -f fraudlens-replayer >/dev/null 2>&1 || true
 docker compose run -d --no-deps --name fraudlens-replayer producer python -m producer.replayer \
-  --particion prueba $cuales --factor 0 --tasa-max 50 --malos-pct 1 2>&1 | tail -1
-echo 'replayer en marcha: $n pagos a 50 por segundo ($cuales)'"
+  --particion prueba $cuales --factor 0 --tasa-max 500 --malos-pct 1 2>&1 | tail -1
+echo 'replayer en marcha: $n pagos a 500 por segundo ($cuales)'"
     ;;
   streaming)
     remoto "$EC2_A" "echo '-- replayer'; docker logs fraudlens-replayer 2>&1 | grep -E 'enviad|\"enviados\"|error' | tail -2
