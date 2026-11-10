@@ -24,6 +24,8 @@ export AWS_PROFILE="${AWS_PROFILE:-fraudlens}"
 export AWS_REGION="${AWS_REGION:-us-east-2}"
 EC2_A="${EC2_A:-i-05f1133376ba2ac37}"   # streaming: Kafka, Spark, replayer
 EC2_B="${EC2_B:-i-0eba9e79f7ea9e9f6}"   # batch: PostgreSQL, Airflow, API
+BUCKET="${BUCKET:-fraudlens-lake-216408407230}"
+TABLA="${TABLA:-alertas_fraude}"
 RAIZ="$(cd "$(dirname "$0")/.." && pwd)"
 TMPD="$(mktemp -d)"; trap 'rm -rf "$TMPD"' EXIT
 if command -v cygpath >/dev/null 2>&1; then TMPW="$(cygpath -m "$TMPD")"; else TMPW="$TMPD"; fi   # el AWS CLI de Windows no lee /tmp
@@ -84,7 +86,27 @@ $DAG dags list-runs -d fraude_pipeline -o plain 2>/dev/null | awk 'NR>1 && NR<5 
     ;;
   reservar|limpiar)
     if [ "$caso" = reservar ]; then args="--n ${1:-2000}"; else [ -n "${1:-}" ] || { echo "uso: limpiar SUFIJO"; exit 1; }; args="--sufijo $1"; fi
-    remoto "$EC2_B" "docker compose exec -T airflow-scheduler python -m batch.demo $caso $args 2>&1 | grep -E 'fraudlens.demo|Error|error' | cut -c1-200" 900
+    remoto "$EC2_B" "set -o pipefail; docker compose exec -T airflow-scheduler python -m batch.demo $caso $args 2>&1 | grep -E 'fraudlens.demo|Error|error' | cut -c1-200" 900
+    # Las alertas de esos pagos en DynamoDB se borran desde aquí, con la sesión del equipo (el rol de la EC2 no puede
+    # recorrer la tabla). La lista de ids la dejó batch.demo en el lake.
+    aws s3 cp --quiet "s3://$BUCKET/demo/ids_demo.txt" "$TMPW/ids.txt"
+    aws dynamodb scan --table-name "$TABLA" --projection-expression "id_alerta, id_transaccion" --output json > "$TMPD/scan.json"
+    python - "$TMPD/ids.txt" "$TMPD/scan.json" "$TMPD" "$TABLA" <<'PY'
+import json, sys
+ids = set(open(sys.argv[1], encoding="utf-8").read().split())
+items = json.load(open(sys.argv[2], encoding="utf-8"))["Items"]
+borrar = [i["id_alerta"]["S"] for i in items if i.get("id_transaccion", {}).get("S") in ids]
+for n in range(0, len(borrar), 25):
+    pedido = {sys.argv[4]: [{"DeleteRequest": {"Key": {"id_alerta": {"S": a}}}} for a in borrar[n:n + 25]]}
+    json.dump(pedido, open("%s/borrar_%04d.json" % (sys.argv[3], n // 25), "w"))
+print("DynamoDB: %d alertas de esos pagos (de %d en la tabla)" % (len(borrar), len(items)))
+PY
+    for f in "$TMPD"/borrar_*.json; do
+      [ -e "$f" ] || break
+      quedan=$(aws dynamodb batch-write-item --request-items "file://$TMPW/$(basename "$f")" --query "length(UnprocessedItems.*[] || \`[]\`)" --output text)
+      [ "$quedan" = 0 ] || echo "aviso: $quedan borrados quedaron pendientes en $(basename "$f")"
+    done
+    echo "DynamoDB: listo"
     ;;
   enviar|repetir)
     n="${1:-2000}"

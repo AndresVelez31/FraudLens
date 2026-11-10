@@ -10,6 +10,10 @@ tasa de alertas. Gold no se toca: al volver a llegar, el MERGE actualiza sus fil
 Es reversible: Silver es Delta con 90 días de historial (RESTORE a la versión anterior) y las alertas se vuelven a
 crear al llegar los pagos.
 
+Las alertas de esos pagos en DynamoDB las borra el portátil (scripts/demo_aws.sh), con la sesión del equipo: el rol de
+las EC2 tiene mínimo privilegio y no puede recorrer la tabla. Por eso este módulo deja la lista de ids en el lake
+(`demo/ids_demo.txt`).
+
   python -m batch.demo reservar --n 2000
   python -m batch.demo limpiar --sufijo ensayo1     # quita pagos de prueba enviados con un sufijo en el id
 """
@@ -44,23 +48,18 @@ def borrar_en_delta(spark, ruta, condicion_df, columna="id_transaccion"):
     return antes - DeltaTable.forPath(spark, ruta).toDF().count()
 
 
-def borrar_en_dynamodb(es_de_la_demo):
-    """Borra de DynamoDB las alertas cuyo id_transaccion cumple `es_de_la_demo`. Devuelve cuántas."""
-    from common.alerts import _tabla_dynamodb
+def guardar_ids(ids, uri):
+    """Deja la lista de ids (uno por línea) en el lake o en un archivo local."""
+    texto = "\n".join(ids) + "\n"
+    if uri.startswith(("s3a://", "s3://")):
+        import boto3
 
-    tabla = _tabla_dynamodb()
-    kw = {"ProjectionExpression": "id_alerta, id_transaccion"}
-    borrar = []
-    while True:
-        r = tabla.scan(**kw)
-        borrar += [i["id_alerta"] for i in r["Items"] if es_de_la_demo(i.get("id_transaccion") or "")]
-        if "LastEvaluatedKey" not in r:
-            break
-        kw["ExclusiveStartKey"] = r["LastEvaluatedKey"]
-    with tabla.batch_writer() as lote:
-        for id_alerta in borrar:
-            lote.delete_item(Key={"id_alerta": id_alerta})
-    return len(borrar)
+        bucket, clave = uri.split("://", 1)[1].split("/", 1)
+        boto3.client("s3", region_name=config.REGION, endpoint_url=config.S3_ENDPOINT).put_object(
+            Bucket=bucket, Key=clave, Body=texto.encode("utf-8"))
+    else:
+        with open(uri, "w", encoding="utf-8") as f:
+            f.write(texto)
 
 
 def main():
@@ -70,6 +69,7 @@ def main():
     ap.add_argument("--particion", default="prueba", choices=["entrenamiento", "prueba", "todo"])
     ap.add_argument("--origen", default=config.lake(ORIGEN_DEFECTO))
     ap.add_argument("--sufijo", help="limpiar: sufijo de los ids de prueba (sin el guion)")
+    ap.add_argument("--ids", default=config.lake("demo", "ids_demo.txt"), help="dónde se deja la lista de ids")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
@@ -80,29 +80,27 @@ def main():
             from producer.replayer import abrir
 
             ids = ultimos_ids(csv.DictReader(abrir(a.origen)), a.n, a.particion)
-            ids_df = spark.createDataFrame([(i,) for i in ids], "id_transaccion STRING")
-            conjunto = set(ids)
-            es_de_la_demo = conjunto.__contains__
-            destinos = ["silver_transacciones", "silver_alertas"]
         else:
             if not a.sufijo:
                 ap.error("limpiar necesita --sufijo")
             fin = "-" + a.sufijo
-            es_de_la_demo = lambda i: i.endswith(fin)  # noqa: E731
-            silver = spark.read.format("delta").load(tables.ruta("silver_transacciones"))
-            ids_df = silver.where(silver.id_transaccion.endswith(fin)).select("id_transaccion").distinct()
-            destinos = ["silver_transacciones", "silver_alertas"]
-
-        ids_df = ids_df.cache()
-        log.info("pagos de la demo: %d", ids_df.count())
-        for nombre in destinos:
+            ids = set()
+            for nombre in ["silver_transacciones", "silver_alertas"]:
+                t = spark.read.format("delta").load(tables.ruta(nombre))
+                ids |= {r[0] for r in t.where(t.id_transaccion.endswith(fin)).select("id_transaccion").distinct().collect()}
+            ids = sorted(ids)
+        # La lista va en memoria (unos miles de ids): un DataFrame leído de Silver se vaciaría al borrar de Silver.
+        ids_df = spark.createDataFrame([(i,) for i in ids], "id_transaccion STRING")
+        log.info("pagos de la demo: %d", len(ids))
+        for nombre in ["silver_transacciones", "silver_alertas"]:
             log.info("%s: %d filas borradas", nombre, borrar_en_delta(spark, tables.ruta(nombre), ids_df))
         if a.paso == "limpiar":   # los pagos de prueba no deben quedar en Gold (no son del dataset)
             from batch.gold import existe, ruta as ruta_gold
             for nombre in ["fact_transacciones", "fact_alertas"]:
                 if existe(spark, nombre):
                     log.info("%s: %d filas borradas", nombre, borrar_en_delta(spark, ruta_gold(nombre), ids_df))
-        log.info("DynamoDB: %d alertas borradas", borrar_en_dynamodb(es_de_la_demo))
+        guardar_ids(ids, a.ids)
+        log.info("ids guardados en %s (las alertas de DynamoDB las borra demo_aws.sh)", a.ids)
     finally:
         spark.stop()
     return 0
