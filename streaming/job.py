@@ -166,19 +166,23 @@ def procesar_lote(spark, modelo_r4=None):
             )
             partes = []
             ruta_disp, ruta_perfil = config.lake("gold", "dim_dispositivo"), config.lake("gold", "perfil_cliente")
-            if _existe(spark, ruta_disp) and _existe(spark, ruta_perfil):
+            if not config.regla_activa("R2"):
+                pass
+            elif _existe(spark, ruta_disp) and _existe(spark, ruta_perfil):
                 partes.append(
                     rules.r2_alertas(tx, spark.read.format("delta").load(ruta_disp), spark.read.format("delta").load(ruta_perfil), version)
                 )
             else:
                 log.warning("R2 omitida: Gold aún no tiene dim_dispositivo/perfil_cliente (corre fraude_pipeline)")
             ruta_lista = config.lake("silver", "lista_riesgo")
-            if _existe(spark, ruta_lista):
+            if not config.regla_activa("R3"):
+                pass
+            elif _existe(spark, ruta_lista):
                 lista = rules.lista_vigente(spark.read.format("delta").load(ruta_lista))
                 partes.append(rules.r3_alertas(tx, lista, version))
             else:
                 log.warning("R3 omitida: no hay lista de riesgo cargada (corre catalogos_diario)")
-            if modelo_r4 is not None:
+            if modelo_r4 is not None and config.regla_activa("R4"):
                 correo = c.where(~F.col("ilegible") & F.col("motivo").isNull()).select(
                     F.col("e.id_transaccion").alias("id_transaccion"), F.col("e.correo_dominio").alias("correo_dominio"),
                 ).dropDuplicates(["id_transaccion"])
@@ -257,30 +261,33 @@ def main():
         .start()
     )
 
-    silver = spark.readStream.format("delta").load(tables.ruta("silver_transacciones"))
-    r1 = rules.r1_agregar(silver.select("ts_evento", "id_cliente", "monto").withWatermark("ts_evento", "10 minutes"))
-    q_r1 = (
-        r1.writeStream.queryName("r1_ventanas")
-        .outputMode("update")
-        .foreachBatch(procesar_r1(spark))
-        .option("checkpointLocation", config.lake("checkpoints", "r1"))
-        .trigger(processingTime=config.env("TRIGGER_R1_SEGUNDOS", "2") + " seconds")  # R1 lee de Silver: sondea más seguido
-        .start()
-    )
+    consultas = [q_ingesta]
+    if config.regla_activa("R1"):
+        silver = spark.readStream.format("delta").load(tables.ruta("silver_transacciones"))
+        r1 = rules.r1_agregar(silver.select("ts_evento", "id_cliente", "monto").withWatermark("ts_evento", "10 minutes"))
+        consultas.append(
+            r1.writeStream.queryName("r1_ventanas")
+            .outputMode("update")
+            .foreachBatch(procesar_r1(spark))
+            .option("checkpointLocation", config.lake("checkpoints", "r1"))
+            .trigger(processingTime=config.env("TRIGGER_R1_SEGUNDOS", "2") + " seconds")  # R1 lee de Silver: sondea más seguido
+            .start()
+        )
+    log.info("reglas activas: %s (versión %s)", ",".join(sorted(config.REGLAS_ACTIVAS)), config.RULE_VERSION)
 
     # Latido: el sensor `check_streaming_vivo` de Airflow lo lee para saber que el job sigue vivo.
     inicio = time.time()
     while True:
-        for q in (q_ingesta, q_r1):
+        for q in consultas:
             if q.exception():
                 raise q.exception()  # el contenedor se reinicia y retoma desde el checkpoint
-        lake.escribir_latido({"queries": [q_ingesta.name, q_r1.name], "activas": all(q.isActive for q in (q_ingesta, q_r1))})
+        lake.escribir_latido({"queries": [q.name for q in consultas], "activas": all(q.isActive for q in consultas)})
         alerts.enviar_pendientes()   # el resumen de alertas que quedó esperando el intervalo
         if args.max_segundos and time.time() - inicio > args.max_segundos:
             break
         time.sleep(10)
-    q_ingesta.stop()
-    q_r1.stop()
+    for q in consultas:
+        q.stop()
     alerts.enviar_pendientes(forzar=True)
     spark.stop()
 
