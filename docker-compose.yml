@@ -31,6 +31,7 @@ x-env: &env
   RULE_VERSION: ${RULE_VERSION:-v1}
   REGLAS_ACTIVAS: ${REGLAS_ACTIVAS:-R1,R2,R3,R4}
   STARTING_OFFSETS: ${STARTING_OFFSETS:-earliest}
+  SPARK_UI_ENABLED: ${SPARK_UI_ENABLED:-false}   # interfaz web de Spark (4040); en la EC2-A se activa para la demo
   SPARK_MASTER: ${SPARK_MASTER:-local[2]}
   N_CLIENTES: ${N_CLIENTES:-20000}
   CATALOGOS_ORIGEN: ${CATALOGOS_ORIGEN:-}
@@ -126,6 +127,7 @@ services:
     profiles: ["streaming"]
     environment: *env
     command: python -m streaming.job
+    ports: ["127.0.0.1:4040:4040"]   # interfaz de Spark solo dentro de la máquina: se ve por túnel de SSM, no desde internet
     depends_on:
       kafka-init: {condition: service_completed_successfully}
     restart: unless-stopped
