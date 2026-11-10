@@ -4,7 +4,16 @@
   python -m batch.gold hechos        fact_transacciones y fact_alertas (+ marca de transacciones sospechosas)
 
 Todo es idempotente (MERGE o sobrescritura de una tabla derivada): correr dos veces el mismo paso deja el mismo Gold.
-Los hechos se procesan de forma incremental sobre los últimos `--dias` días de Silver (partición `fecha`).
+
+Tres relojes distintos, cada uno para lo suyo (necesario para reproducir datos históricos como IEEE-CIS):
+  * Incremental por LLEGADA (`ingest_ts`): cada corrida toma lo que entró a Silver en los últimos `--dias` días,
+    sin importar la fecha del pago. Antes se filtraba por la fecha del evento y una transacción con fecha antigua
+    que llegara hoy nunca pasaba a Gold.
+  * Perfil de R2 con el reloj de los DATOS: el promedio de 30 días se calcula hacia atrás desde el último
+    `ts_evento` de Silver, no desde la hora del servidor. En producción los dos coinciden; al reproducir un
+    histórico, el reloj del servidor dejaría el perfil vacío.
+  * Hora de negocio en Colombia (`ZONA_HORARIA`, por defecto America/Bogota): `id_tiempo`, hora y franja del día.
+    Los timestamps se siguen guardando en UTC y la partición `fecha` sigue siendo la de Silver (UTC).
 """
 import argparse
 import logging
@@ -20,6 +29,8 @@ from common.spark import get_spark
 
 log = logging.getLogger("fraudlens.gold")
 FIN_DE_LOS_TIEMPOS = "9999-12-31"
+ZONA_HORARIA = config.env("ZONA_HORARIA", "America/Bogota")
+PERFIL_DIAS = 30
 
 
 def ruta(nombre):
@@ -39,8 +50,22 @@ def escribir(spark, df, nombre, particion=None):
     tables.fijar_retencion(spark, ruta(nombre))
 
 
-def desde(dias):
-    return (datetime.now(timezone.utc) - timedelta(days=dias)).date().isoformat()
+def corte_ingesta(dias):
+    """Instante desde el que se reprocesa: lo que llegó a Silver en los últimos `dias` días (reloj del servidor)."""
+    return datetime.now(timezone.utc) - timedelta(days=dias)
+
+
+def llegadas(df, dias):
+    return df.where(F.col("ingest_ts") >= F.lit(corte_ingesta(dias)))
+
+
+def hora_local(col):
+    """Timestamp UTC -> hora de pared en Colombia (para id_tiempo, hora y franja)."""
+    return F.from_utc_timestamp(col, ZONA_HORARIA)
+
+
+def id_tiempo(col):
+    return F.date_format(hora_local(col), "yyyyMMddHH").cast("int")
 
 
 # ---------------------------------------------------------------- dimensiones
@@ -77,7 +102,7 @@ def dim_cliente_scd2(spark):
 def dim_dispositivo(spark, dias):
     tx = spark.read.format("delta").load(tables.ruta("silver_transacciones"))
     if existe(spark, "dim_dispositivo"):
-        tx = tx.where(F.col("fecha") >= desde(dias))
+        tx = llegadas(tx, dias)
     agg = tx.groupBy("id_cliente", "id_dispositivo").agg(
         F.min("ts_evento").alias("primera_vez"), F.max("ts_evento").alias("ultima_vez")
     )
@@ -94,22 +119,34 @@ def dim_dispositivo(spark, dias):
 
 
 def perfil_cliente(spark):
-    """Promedio de monto de los últimos 30 días por cliente: la referencia de R2."""
-    tx = spark.read.format("delta").load(tables.ruta("silver_transacciones")).where(F.col("fecha") >= desde(30))
-    perfil = tx.groupBy("id_cliente").agg(
-        F.avg("monto").alias("avg_monto_30d"), F.count("*").alias("n_tx_30d")
-    ).withColumn("actualizado_ts", F.current_timestamp())
+    """Promedio de monto de los últimos 30 días por cliente: la referencia de R2.
+
+    Los 30 días se cuentan hacia atrás desde el último pago registrado en Silver (`reloj_datos`)."""
+    tx = spark.read.format("delta").load(tables.ruta("silver_transacciones"))
+    reloj = tx.agg(F.max("ts_evento")).collect()[0][0]
+    if reloj is None:
+        return
+    inicio = reloj - timedelta(days=PERFIL_DIAS)
+    perfil = (
+        tx.where((F.col("ts_evento") > F.lit(inicio)) & (F.col("ts_evento") <= F.lit(reloj)))
+        .groupBy("id_cliente").agg(F.avg("monto").alias("avg_monto_30d"), F.count("*").alias("n_tx_30d"))
+        .withColumn("reloj_datos", F.lit(reloj).cast("timestamp"))
+        .withColumn("actualizado_ts", F.current_timestamp())
+    )
     escribir(spark, perfil, "perfil_cliente")
+    log.info("perfil_cliente: 30 días hasta %s (último pago en Silver)", reloj)
 
 
 def dim_tiempo(spark):
+    """Una fila por hora, en hora de Colombia, que cubre todos los pagos de Silver."""
+    local = hora_local(F.col("ts_evento"))
     limites = spark.read.format("delta").load(tables.ruta("silver_transacciones")).agg(
-        F.min("fecha").alias("a"), F.max("fecha").alias("b")).collect()[0]
+        F.to_date(F.min(local)).alias("a"), F.to_date(F.max(local)).alias("b")).collect()[0]
     if limites["a"] is None:
         return
     horas = spark.sql(
-        "SELECT explode(sequence(to_timestamp('%s'), to_timestamp('%s') + INTERVAL 1 DAY, INTERVAL 1 HOUR)) AS ts"
-        % (limites["a"], limites["b"])
+        "SELECT explode(sequence(to_timestamp('%s'), to_timestamp('%s') + INTERVAL 1 DAY - INTERVAL 1 HOUR,"
+        " INTERVAL 1 HOUR)) AS ts" % (limites["a"], limites["b"])
     )
     h = F.hour("ts")
     dim = horas.select(
@@ -118,15 +155,9 @@ def dim_tiempo(spark):
         h.alias("hora"),
         F.when(h < 6, "madrugada").when(h < 12, "manana").when(h < 18, "tarde").otherwise("noche").alias("franja"),
         F.dayofweek("ts").alias("dia_semana"), F.weekofyear("ts").alias("semana_iso"),
-        (F.dayofweek("ts").isin(1, 7)).alias("es_fin_de_semana"),
+        (F.dayofweek("ts").isin(1, 7)).alias("es_fin_de_semana"), F.lit(ZONA_HORARIA).alias("zona_horaria"),
     )
-    if not existe(spark, "dim_tiempo"):
-        escribir(spark, dim, "dim_tiempo")
-        return
-    (
-        DeltaTable.forPath(spark, ruta("dim_tiempo")).alias("t")
-        .merge(dim.alias("s"), "t.id_tiempo = s.id_tiempo").whenNotMatchedInsertAll().execute()
-    )
+    escribir(spark, dim, "dim_tiempo")  # pequeña (24 filas por día): se reescribe completa
 
 
 def dimensiones(spark, dias):
@@ -154,12 +185,15 @@ def _merge_o_crear(spark, df, nombre, condicion, particion=None, set_si_coincide
 
 def hechos(spark, dias):
     batch_id = "gold-%s" % uuid.uuid4().hex[:8]
-    f0 = desde(dias) if existe(spark, "fact_transacciones") else "1970-01-01"  # la primera vez se toma todo Silver
+    silver = spark.read.format("delta").load(tables.ruta("silver_transacciones"))
+    incremental = existe(spark, "fact_transacciones")  # la primera vez se toma todo Silver
+    if incremental:
+        silver = llegadas(silver, dias)
 
     # fact_transacciones: una fila por transacción de Silver; conserva partición y offset de Kafka (RNF-06)
-    tx = spark.read.format("delta").load(tables.ruta("silver_transacciones")).where(F.col("fecha") >= f0).select(
+    tx = silver.select(
         "id_transaccion", "id_cliente", "id_comercio", "id_dispositivo",
-        F.date_format("ts_evento", "yyyyMMddHH").cast("int").alias("id_tiempo"),
+        id_tiempo("ts_evento").alias("id_tiempo"),
         "ts_evento", "fecha", "monto", "tipo", F.lit(False).alias("es_sospechosa"),
         "source_system", "kafka_partition", "kafka_offset", F.col("ingest_ts").alias("ingest_ts"),
         F.lit(batch_id).alias("batch_id"),
@@ -179,14 +213,18 @@ def hechos(spark, dias):
         spark, al, "fact_alertas", "t.id_alerta = s.id_alerta AND t.rule_version = s.rule_version", "fecha",
         set_si_coincide={"n_tx": "s.n_tx", "monto_total": "s.monto_total", "ventana_fin": "s.ventana_fin"},
     )
-    marcar_sospechosas(spark, f0)
+    marcar_sospechosas(spark, dias if incremental else None)
     log.info("hechos de Gold actualizados (batch %s)", batch_id)
 
 
-def marcar_sospechosas(spark, fecha_desde):
-    """Una transacción es sospechosa si tiene alerta propia (R2, R3) o si cae dentro de la ventana de una R1."""
+def marcar_sospechosas(spark, dias=None):
+    """Una transacción es sospechosa si tiene alerta propia (R2, R3, R4) o si cae dentro de la ventana de una R1.
+
+    `dias`: revisa solo lo que llegó en esos días (None = todo Gold)."""
     alertas = spark.read.format("delta").load(ruta("fact_alertas")).where("origen = 'streaming'")
-    tx = spark.read.format("delta").load(ruta("fact_transacciones")).where(F.col("fecha") >= fecha_desde)
+    tx = spark.read.format("delta").load(ruta("fact_transacciones"))
+    if dias is not None:
+        tx = llegadas(tx, dias)
     propias = alertas.where(F.col("id_transaccion").isNotNull()).select("id_transaccion")
     r1 = alertas.where("id_regla = 'R1'").select(
         F.col("id_cliente").alias("r_cli"), F.col("ventana_inicio").alias("v0"), F.col("ventana_fin").alias("v1"))
@@ -195,10 +233,13 @@ def marcar_sospechosas(spark, fecha_desde):
         .join(r1, (F.col("id_cliente") == F.col("r_cli")) & (F.col("ts_evento") >= F.col("v0")) & (F.col("ts_evento") < F.col("v1")))
         .select("id_transaccion")
     )
-    sospechosas = propias.union(en_ventana).distinct()
+    # Solo las transacciones de este rango; la partición va en la condición para que el MERGE no recorra todo Gold.
+    sospechosas = (
+        tx.select("id_transaccion", "fecha").join(propias.union(en_ventana).distinct(), "id_transaccion", "left_semi")
+    )
     (
         DeltaTable.forPath(spark, ruta("fact_transacciones")).alias("t")
-        .merge(sospechosas.alias("s"), "t.id_transaccion = s.id_transaccion AND t.fecha >= '%s'" % fecha_desde)
+        .merge(sospechosas.alias("s"), "t.id_transaccion = s.id_transaccion AND t.fecha = s.fecha")
         .whenMatchedUpdate(condition="t.es_sospechosa = false", set={"es_sospechosa": "true"})
         .execute()
     )
@@ -208,7 +249,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("paso", choices=["dimensiones", "hechos"])
     ap.add_argument("--dias", type=int, default=int(config.env("GOLD_DIAS_INCREMENTAL", "2")),
-                    help="días recientes de Silver que se reprocesan (la primera vez se toma todo)")
+                    help="días de LLEGADA a Silver (ingest_ts) que se reprocesan (la primera vez se toma todo)")
     a = ap.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     spark = get_spark("fraudlens-gold-" + a.paso)

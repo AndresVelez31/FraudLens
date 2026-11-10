@@ -128,12 +128,20 @@ FraudLens usa transacciones reales de **IEEE-CIS Fraud Detection** (Vesta, Kaggl
    riesgo `riesgo_v100.csv`: 43 dispositivos aprendidos solo con el 80 % inicial. En el 20 % final esa lista acierta
    el 18,6 % de sus alertas, unas 5 veces la tasa base. Para MinIO local, antes de `--destino`:
    `S3_ENDPOINT=http://localhost:9000 AWS_ACCESS_KEY_ID=minioadmin AWS_SECRET_ACCESS_KEY=minioadmin AWS_REGION=us-east-1`.
-3. **Cargar la lista** con el DAG `catalogos_diario` y **reproducir** las transacciones:
+3. **Catálogos reales en PostgreSQL**: con `CATALOGOS_ORIGEN=s3a://<bucket>/raw/ieee-cis/preparado/catalogos` en
+   `.env`, el servicio `setup` reemplaza los clientes sintéticos por los 217.850 de IEEE-CIS (sin `CATALOGOS_ORIGEN`
+   sigue sembrando los sintéticos). A mano: `python -m producer.catalogo --postgres --desde-csv <carpeta> --reemplazar`.
+4. **Cargar la lista** con el DAG `catalogos_diario` y **reproducir** las transacciones:
    ```bash
    docker compose run --rm --no-deps producer python -m producer.replayer --particion prueba --limite 20000 --factor 1300
    ```
    `--factor 1300` reproduce el ritmo real acelerado (~50 eventos/s); `--factor 0 --tasa-max 200` envía lo más rápido
    posible con tope; `--malos-pct 1` inyecta registros dañados para probar la DLQ y la cuarentena.
+
+**Gold con datos históricos.** Como los pagos reproducidos tienen fecha de 2026-05 a 2026-10 pero llegan hoy, Gold
+procesa de forma incremental por **hora de llegada** (`ingest_ts`), no por fecha del pago; el promedio de 30 días de
+R2 se cuenta desde el **último pago de Silver** (el reloj de los datos), y `id_tiempo`, hora y franja del día están en
+**hora de Colombia** (`ZONA_HORARIA`). En operación normal los dos relojes coinciden y nada cambia.
 
 **Prueba local** (5.000 transacciones del 20 % final, 1 % dañadas): 0 transacciones reales en cuarentena, los 43
 registros inválidos inyectados en cuarentena con su motivo, los 13 ilegibles en la DLQ y exactamente las 21 alertas R3
