@@ -40,11 +40,24 @@ Para ver Airflow en el navegador hace falta el Session Manager plugin del AWS CL
 `bash scripts/demo_aws.sh airflow`. Sin él, `bash scripts/demo_aws.sh gold` muestra el estado del DAG en la terminal.
 
 ## El día de la sustentación
-- **40 min antes:** `encender`, `estado` y `reservar 2000`. Después del ensayo los pagos ya quedaron cargados, así que
-  **hay que reservarlos otra vez**; si no, en la demo no saldrán alertas nuevas.
-- Abrir Power BI (`dashboards/powerbi/FraudLens.pbip`), el diagrama, el correo donde llegan las alertas y, si está el
-  plugin, Airflow en http://localhost:8081.
-- Tener abierta una terminal en la raíz del repo.
+- **40 min antes:** `encender`, `estado`, `preparar` y `reservar 2000`. Después del ensayo los pagos ya quedaron
+  cargados, así que **hay que reservarlos otra vez**; si no, en la demo no saldrán alertas nuevas.
+- **10 min antes:** `repetir 50` para calentar Spark (el primer lote después de encender tarda ~4 min; los siguientes
+  ~2,5). No genera alertas nuevas ni correos.
+- Abrir los tres túneles, cada uno en su terminal (necesitan el Session Manager plugin):
+  `airflow` (http://localhost:8081), `api` (http://localhost:8080/docs) y `spark` (http://localhost:4040, pestaña
+  *Structured Streaming*). Los túneles se cierran solos tras un rato sin uso: abrirlos justo antes.
+
+**Pantallas:**
+
+| Ventana | Para qué |
+|---|---|
+| Terminal | `enviar` y, si hace falta, `streaming` |
+| Navegador: Spark (localhost:4040) | Input Rate, Input Rows y Batch Duration del micro-lote en vivo |
+| Navegador: Airflow (localhost:8081) | El DAG y sus corridas |
+| Navegador: API (localhost:8080/docs) | Las alertas nuevas (`/alertas`, regla R4) |
+| Navegador: consola de Athena (workgroup `fraudlens`) | P6 y P5 en tabla, con tiempo y MB leídos |
+| Power BI y correo | Acierto (P7) y el resumen de alertas |
 
 ## Guion (8 minutos)
 | Min | Qué se hace | Comando | Qué se dice |
@@ -53,7 +66,7 @@ Para ver Airflow en el navegador hace falta el Session Manager plugin del AWS CL
 | 0:30 | **Productor → Kafka** | `enviar 2000` | «Mandamos los últimos 2.000 pagos reales del dataset, con 1 % de registros dañados. El sistema no conoce su etiqueta.» |
 | 1:00 | **DAG de Airflow** | Airflow en el navegador, o `gold` | «`fraude_pipeline` corre cada 10 min: verifica que el streaming esté vivo, construye Gold, controla la calidad y registra en Glue. Si una tarea falla, las siguientes no corren y llega un correo.» |
 | 2:30 | **Pregunta de negocio sobre Gold** | `consulta p6` | «P6 del E1: las 10 regiones con más monto sospechoso de la última semana, en 3 s y leyendo 5 MB.» |
-| 3:30 | **Spark procesando** | `streaming` | «El micro-lote que tomó los 2.000 pagos: cuántos fueron válidos, cuántos a cuarentena y a la DLQ, y cuántas alertas nuevas. Tardó unos 3 minutos: esa es la latencia que no cumple la meta, y su causa es R4 leyendo la historia de cada cliente.» |
+| 3:30 | **Spark procesando** | Spark en el navegador (recargar la página de la consulta `ingesta`) y `streaming` | «El micro-lote que tomó los 2.000 pagos: cuántos fueron válidos, cuántos a cuarentena y a la DLQ, y cuántas alertas nuevas. Tardó unos 3 minutos: esa es la latencia que no cumple la meta, y su causa es R4 leyendo la historia de cada cliente.» |
 | 4:30 | Alertas | `alertas R4` | «Las alertas nuevas, en DynamoDB, escritas una sola vez.» Mostrar el correo resumen si ya llegó. |
 | 5:30 | Acierto | `consulta p7` o Power BI, página «Acierto contra la realidad» | «Contra el fraude real: 20,9 % de precisión y 23,7 % de cobertura en la partición de prueba.» |
 | 6:30 | Latencia por tramo | `consulta p5` | «La latencia partida en envío, cola y proceso.» |
