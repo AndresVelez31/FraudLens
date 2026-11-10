@@ -1,4 +1,4 @@
-# Evaluación de FraudLens contra la realidad (tareas D2 y F1)
+# Evaluación de FraudLens contra la realidad (tareas D2, F1, F2 y F3)
 
 **Pregunta del cliente:** ¿cuántas de nuestras alertas son fraude de verdad y cuántos fraudes detectamos?
 
@@ -115,12 +115,66 @@ precisión es baja. El camino para mejorar es un **modelo (R4) que use las seña
 en el streaming. Las reglas quedan como explicación y como respaldo. Los modelos entrenados se guardan en
 `data/modelos/`, fuera del repositorio.
 
+## Comparación final (F3)
+
+¿Conviene reemplazar las reglas, combinarlas con el modelo o usar el modelo solo para filtrarlas? Se probaron todas
+las opciones sobre las mismas transacciones de prueba (`ml/comparacion_final.py`). Las fracciones del filtro son
+fijas (75, 50 y 25 %), así que no se ajustaron mirando las etiquetas de prueba. Tabla completa en
+[`comparacion_final.md`](comparacion_final.md).
+
+| Escenario | Alertas por 1.000 | Precisión | Cobertura | Falsos positivos por 1.000 legítimas | Monto de fraude detectado |
+|---|---|---|---|---|---|
+| A. Reglas calibradas (hoy) | 46,4 | 7,4 % | 10,0 % | 44,5 | 6,7 % |
+| B. Modelo "contrato" solo | 46,4 | 20,6 % | 27,8 % | 38,1 | 26,6 % |
+| **C. R2 y R3 + modelo en lugar de R1** | **46,4** | **19,6 %** | **26,4 %** | **38,6** | **26,2 %** |
+| D. Mitad de las reglas con mayor puntaje + modelo | 46,4 | 17,3 % | 23,3 % | 39,7 | 23,6 % |
+| E. Reglas filtradas, se conserva el 50 % | 23,2 | 11,0 % | 7,4 % | 21,4 | 4,6 % |
+| F. Reglas filtradas, se conserva el 25 % | 11,6 | 16,6 % | 5,6 % | 10,0 | 3,6 % |
+| G. Modelo "vesta" (referencia) | 46,4 | 43,0 % | 58,0 % | 27,4 | 55,3 % |
+
+Al filtrar cada regla y quedarse con la mitad de sus alertas de mayor puntaje, la precisión sube así:
+
+| Regla | Sola | Mitad con mayor puntaje | Aciertos que conserva |
+|---|---|---|---|
+| R1 ráfaga | 5,3 % | 6,8 % | 64 % |
+| R2 dispositivo nuevo | 13,5 % | 21,7 % | 80 % |
+| R3 lista de riesgo | 18,6 % | 30,4 % | 82 % |
+
+**Lectura:**
+- **El modelo agrega lo que las reglas no ven.** Con la misma carga de trabajo, cualquier escenario con modelo (B, C
+  y D) detecta entre 2,3 y 2,8 veces más fraude que las reglas solas.
+- **R1 es la regla débil.** Aun filtrada, apenas pasa de 5,3 % a 6,8 % de precisión. Si se cambia R1 por el modelo y
+  se mantienen R2 y R3 (escenario C), se obtiene casi lo mismo que con el modelo solo (19,6 % contra 20,6 %) y se
+  conservan dos reglas fáciles de explicar al cliente.
+- **Si el equipo de análisis tiene poca capacidad, el modelo sirve como filtro.** Quedarse con el 25 % de las alertas
+  de reglas con mayor puntaje (F) reduce los falsos positivos 4,5 veces (de 44,5 a 10 por cada 1.000 clientes
+  legítimos) y conserva más de la mitad de los aciertos.
+- **Techo:** con toda la información de Vesta (G) se duplicaría otra vez la detección. Para acercarse a ese techo
+  habría que enriquecer el evento, por ejemplo con más historia de la tarjeta y datos de identidad del dispositivo.
+
+**Recomendación al cliente (escenario C):** en el streaming,
+- mantener **R2** y **R3**, que son precisas y explicables;
+- reemplazar **R1** por el modelo **R4** ("contrato"), con un umbral que respete el presupuesto de 50 alertas por cada
+  1.000 pagos;
+- usar el puntaje del modelo para **ordenar la cola** del analista, con lo más riesgoso primero.
+
+Así la precisión pasa de 7 % a cerca de 20 % y la detección de 10 % a cerca de 26 % del fraude, sin más alertas. La
+implementación en el streaming es la tarea D5.
+
+Se reproduce con:
+
+```bash
+python -m batch.evaluacion exportar --datos data/ieee-cis/preparado          # marcas de las reglas (imagen fraudlens-spark)
+python ml/modelo_lightgbm.py                                                 # puntajes del modelo (imagen fraudlens-ml)
+python ml/comparacion_final.py                                               # -> comparacion_final.json y .md
+```
+
 ## Contra qué se compara
 
 - **La realidad:** las etiquetas de fraude de Vesta. Es la comparación de esta tabla.
 - **El estado del arte en el mismo dataset:** las mejores soluciones de la competencia usan modelos de *gradient
   boosting* y reportan AUC-ROC cercanas a 0,95 (verificar la cifra exacta en el leaderboard de Kaggle). Las reglas no
   dan un puntaje continuo, así que la comparación justa es contra un modelo propio evaluado igual: es la sección
-  "Reglas contra modelo" (F2). Falta **F3** (comparación final y reglas filtradas por el modelo).
+  "Reglas contra modelo" (F2) y la "Comparación final" (F3).
 - **La industria:** los sistemas de reglas fijas tienen fama de generar muchos falsos positivos; el 92,6 % de este
   resultado es coherente con eso.

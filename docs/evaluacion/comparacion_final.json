@@ -1,0 +1,199 @@
+{
+  "transacciones": 118108,
+  "tasa_base": 0.03441,
+  "presupuesto_alertas": 5479,
+  "escenarios": [
+    {
+      "escenario": "Reglas calibradas (R1, R2 o R3)",
+      "tipo": "reglas",
+      "alertadas": 5479,
+      "tp": 408,
+      "fp": 5071,
+      "fn": 3656,
+      "precision": 0.0745,
+      "recall": 0.1004,
+      "f1": 0.0855,
+      "alertas_por_mil": 46.39,
+      "falsos_positivos_por_mil_legitimas": 44.47,
+      "monto_fraude_detectado_pct": 6.72
+    },
+    {
+      "escenario": "Modelo \"contrato\" (mismo presupuesto)",
+      "tipo": "modelo",
+      "alertadas": 5479,
+      "tp": 1128,
+      "fp": 4351,
+      "fn": 2936,
+      "precision": 0.2059,
+      "recall": 0.2776,
+      "f1": 0.2364,
+      "alertas_por_mil": 46.39,
+      "falsos_positivos_por_mil_legitimas": 38.15,
+      "monto_fraude_detectado_pct": 26.6
+    },
+    {
+      "escenario": "Reglas filtradas por el modelo (se conserva el 75 %)",
+      "tipo": "filtro",
+      "alertadas": 4109,
+      "tp": 369,
+      "fp": 3740,
+      "fn": 3695,
+      "precision": 0.0898,
+      "recall": 0.0908,
+      "f1": 0.0903,
+      "alertas_por_mil": 34.79,
+      "falsos_positivos_por_mil_legitimas": 32.79,
+      "monto_fraude_detectado_pct": 5.99
+    },
+    {
+      "escenario": "Reglas filtradas por el modelo (se conserva el 50 %)",
+      "tipo": "filtro",
+      "alertadas": 2740,
+      "tp": 301,
+      "fp": 2439,
+      "fn": 3763,
+      "precision": 0.1099,
+      "recall": 0.0741,
+      "f1": 0.0885,
+      "alertas_por_mil": 23.2,
+      "falsos_positivos_por_mil_legitimas": 21.39,
+      "monto_fraude_detectado_pct": 4.56
+    },
+    {
+      "escenario": "Reglas filtradas por el modelo (se conserva el 25 %)",
+      "tipo": "filtro",
+      "alertadas": 1370,
+      "tp": 228,
+      "fp": 1142,
+      "fn": 3836,
+      "precision": 0.1664,
+      "recall": 0.0561,
+      "f1": 0.0839,
+      "alertas_por_mil": 11.6,
+      "falsos_positivos_por_mil_legitimas": 10.01,
+      "monto_fraude_detectado_pct": 3.64
+    },
+    {
+      "escenario": "R2 y R3 + modelo (sin R1), mismo presupuesto",
+      "tipo": "hibrido",
+      "alertadas": 5479,
+      "tp": 1073,
+      "fp": 4406,
+      "fn": 2991,
+      "precision": 0.1958,
+      "recall": 0.264,
+      "f1": 0.2249,
+      "alertas_por_mil": 46.39,
+      "falsos_positivos_por_mil_legitimas": 38.63,
+      "monto_fraude_detectado_pct": 26.23
+    },
+    {
+      "escenario": "Mitad de las reglas con mayor puntaje + modelo, mismo presupuesto",
+      "tipo": "hibrido",
+      "alertadas": 5479,
+      "tp": 947,
+      "fp": 4532,
+      "fn": 3117,
+      "precision": 0.1728,
+      "recall": 0.233,
+      "f1": 0.1985,
+      "alertas_por_mil": 46.39,
+      "falsos_positivos_por_mil_legitimas": 39.74,
+      "monto_fraude_detectado_pct": 23.63
+    },
+    {
+      "escenario": "Modelo \"vesta\" (referencia, mismo presupuesto)",
+      "tipo": "referencia",
+      "alertadas": 5479,
+      "tp": 2356,
+      "fp": 3123,
+      "fn": 1708,
+      "precision": 0.43,
+      "recall": 0.5797,
+      "f1": 0.4938,
+      "alertas_por_mil": 46.39,
+      "falsos_positivos_por_mil_legitimas": 27.38,
+      "monto_fraude_detectado_pct": 55.28
+    }
+  ],
+  "por_regla": {
+    "R1": {
+      "todas": {
+        "alertadas": 4303,
+        "tp": 228,
+        "fp": 4075,
+        "fn": 3836,
+        "precision": 0.053,
+        "recall": 0.0561,
+        "f1": 0.0545,
+        "alertas_por_mil": 36.43,
+        "falsos_positivos_por_mil_legitimas": 35.73,
+        "monto_fraude_detectado_pct": 4.1
+      },
+      "mitad_con_mayor_puntaje": {
+        "alertadas": 2152,
+        "tp": 146,
+        "fp": 2006,
+        "fn": 3918,
+        "precision": 0.0678,
+        "recall": 0.0359,
+        "f1": 0.047,
+        "alertas_por_mil": 18.22,
+        "falsos_positivos_por_mil_legitimas": 17.59,
+        "monto_fraude_detectado_pct": 2.47
+      }
+    },
+    "R2": {
+      "todas": {
+        "alertadas": 749,
+        "tp": 101,
+        "fp": 648,
+        "fn": 3963,
+        "precision": 0.1348,
+        "recall": 0.0249,
+        "f1": 0.042,
+        "alertas_por_mil": 6.34,
+        "falsos_positivos_por_mil_legitimas": 5.68,
+        "monto_fraude_detectado_pct": 1.9
+      },
+      "mitad_con_mayor_puntaje": {
+        "alertadas": 374,
+        "tp": 81,
+        "fp": 293,
+        "fn": 3983,
+        "precision": 0.2166,
+        "recall": 0.0199,
+        "f1": 0.0365,
+        "alertas_por_mil": 3.17,
+        "falsos_positivos_por_mil_legitimas": 2.57,
+        "monto_fraude_detectado_pct": 1.35
+      }
+    },
+    "R3": {
+      "todas": {
+        "alertadas": 533,
+        "tp": 99,
+        "fp": 434,
+        "fn": 3965,
+        "precision": 0.1857,
+        "recall": 0.0244,
+        "f1": 0.0431,
+        "alertas_por_mil": 4.51,
+        "falsos_positivos_por_mil_legitimas": 3.81,
+        "monto_fraude_detectado_pct": 1.05
+      },
+      "mitad_con_mayor_puntaje": {
+        "alertadas": 266,
+        "tp": 81,
+        "fp": 185,
+        "fn": 3983,
+        "precision": 0.3045,
+        "recall": 0.0199,
+        "f1": 0.0374,
+        "alertas_por_mil": 2.25,
+        "falsos_positivos_por_mil_legitimas": 1.62,
+        "monto_fraude_detectado_pct": 0.96
+      }
+    }
+  }
+}

@@ -11,8 +11,8 @@ Entrena dos modelos con la MISMA partición temporal 80/20 de la evaluación de 
   docker build -f infra/docker/Dockerfile.ml -t fraudlens-ml .
   docker run --rm -v "$PWD:/opt/fraudlens" fraudlens-ml python ml/modelo_lightgbm.py
 
-Salidas: docs/evaluacion/modelo.json (métricas e importancia de variables) y data/modelos/ (modelos entrenados,
-fuera del repositorio).
+Salidas: docs/evaluacion/modelo.json (métricas e importancia de variables) y data/modelos/ (modelos entrenados y
+puntajes de la partición de prueba para ml/comparacion_final.py, fuera del repositorio).
 """
 import argparse
 import json
@@ -139,9 +139,13 @@ def punto_operacion(y, score, monto, alertadas):
             "monto_fraude_detectado_pct": round(float(100 * monto[(alertadas == 1) & (y == 1)].sum() / monto[y == 1].sum()), 2)}
 
 
+def puntajes_prueba(modelo, x, particion):
+    return modelo.predict_proba(x.iloc[np.flatnonzero(particion == "prueba")])[:, 1]
+
+
 def evaluar(modelo, x, y, monto, particion):
     te = np.flatnonzero(particion == "prueba")
-    s = modelo.predict_proba(x.iloc[te])[:, 1]
+    s = puntajes_prueba(modelo, x, particion)
     yt, mt = y[te], monto[te]
     res = {"auc_roc": round(float(roc_auc_score(yt, s)), 4), "auc_pr": round(float(average_precision_score(yt, s)), 4),
            "arboles": int(modelo.best_iteration_ or modelo.n_estimators)}
@@ -174,10 +178,12 @@ def main():
                                                "alertas_por_mil": PRESUPUESTO_REGLAS * 1000},
               "modelos": {}}
     os.makedirs(SALIDA_MODELOS, exist_ok=True)
+    puntajes = None
     # Cada modelo carga solo lo que necesita, para no tener las ~430 columnas en memoria dos veces.
     for nombre, construir, columnas in (("contrato", variables_contrato, COLS_CONTRATO), ("vesta", variables_vesta, None)):
         df = cargar(a.datos, columnas)
         y, monto, particion = df["isFraud"].to_numpy(), df["TransactionAmt"].to_numpy(), df["particion"].to_numpy()
+        ids = df["TransactionID"].to_numpy()
         salida["particion_prueba"] = {"transacciones": int((particion == "prueba").sum()),
                                       "tasa_base": round(float(y[particion == "prueba"].mean()), 5)}
         x = construir(df)
@@ -188,9 +194,14 @@ def main():
         r["importancia_top10_pct"] = importancia(modelo, x)
         salida["modelos"][nombre] = r
         modelo.booster_.save_model(os.path.join(SALIDA_MODELOS, "lightgbm_%s.txt" % nombre))
+        te = particion == "prueba"
+        if puntajes is None:
+            puntajes = pd.DataFrame({"id_transaccion": "T" + pd.Series(ids[te]).astype(str)})
+        puntajes["puntaje_" + nombre] = puntajes_prueba(modelo, x, particion)
         print(nombre, json.dumps({k: r[k] for k in ("auc_roc", "auc_pr", "arboles", "variables")}),
               "| presupuesto:", json.dumps(r["mismo_presupuesto_que_reglas"]), flush=True)
         del x, modelo   # liberar memoria antes del siguiente modelo
+    puntajes.to_csv(os.path.join(SALIDA_MODELOS, "puntajes_prueba.csv"), index=False)
     salida["duracion_s"] = round(time.time() - t0, 1)
     os.makedirs(os.path.dirname(SALIDA_DOC), exist_ok=True)
     with open(SALIDA_DOC, "w", encoding="utf-8") as f:
