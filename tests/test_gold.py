@@ -115,3 +115,9 @@ def test_sin_archivo_de_etiquetas_no_falla(spark, lake, monkeypatch):
     agregar(spark, [("A", "C1", datetime(2026, 5, 10, 12), 10.0, AHORA)])
     gold.hechos(spark, dias=2)
     assert spark.read.format("delta").load(gold.ruta("fact_transacciones")).collect()[0].es_fraude_real is None
+
+
+def test_pago_sin_region_queda_como_sin_region(spark, lake):
+    agregar(spark, [("N", "C1", datetime(2026, 5, 10, 12), 10.0, AHORA)])     # ciudad (addr1) vacía
+    gold.hechos(spark, dias=2)
+    assert spark.read.format("delta").load(gold.ruta("fact_transacciones")).collect()[0].region == "Sin región"

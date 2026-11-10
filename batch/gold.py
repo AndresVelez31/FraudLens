@@ -65,6 +65,14 @@ def hora_local(col):
     return F.from_utc_timestamp(col, ZONA_HORARIA)
 
 
+SIN_REGION = "Sin región"
+
+
+def region(col):
+    """Región de facturación del pago; IEEE-CIS no la trae en ~11 % de los pagos (addr1 vacío)."""
+    return F.coalesce(col, F.lit(SIN_REGION))
+
+
 def id_tiempo(col):
     return F.date_format(hora_local(col), "yyyyMMddHH").cast("int")
 
@@ -195,7 +203,7 @@ def hechos(spark, dias):
     tx = silver.select(
         "id_transaccion", "id_cliente", "id_comercio", "id_dispositivo",
         id_tiempo("ts_evento").alias("id_tiempo"),
-        "ts_evento", "fecha", "monto", "tipo", F.col("ciudad").alias("region"), F.lit(False).alias("es_sospechosa"),
+        "ts_evento", "fecha", "monto", "tipo", region(F.col("ciudad")).alias("region"), F.lit(False).alias("es_sospechosa"),
         # La realidad (contracargos / fraude confirmado) llega después y por otro camino: la llena `etiquetar`.
         F.lit(None).cast("boolean").alias("es_fraude_real"), F.lit(None).cast("string").alias("particion_eval"),
         "source_system", "kafka_partition", "kafka_offset", F.col("ingest_ts").alias("ingest_ts"),
