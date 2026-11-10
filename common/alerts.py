@@ -5,11 +5,11 @@ Orden por lote (si el job muere en cualquier punto y el lote se repite, nada se 
      que se actualiza) se refrescan solo sus campos variables y se conservan ts_evento y ts_alerta originales.
   2. SNS: solo para las alertas cuya escritura condicional SÍ tuvo éxito (alertas realmente nuevas). No se manda un
      correo por alerta: se acumulan y sale un resumen, como máximo uno cada NOTIFICAR_CADA_SEGUNDOS (ver notificar).
+     Con NOTIFICAR_DESDE=lambda este paso lo hace la Lambda notificadora desde el stream de DynamoDB (D3).
   3. Silver: MERGE por id_alerta.
 Compromiso conocido: si el job muere entre 1 y 2, esa alerta queda en DynamoDB pero no se notifica (al repetir el
 lote ya existe). Se prefiere no enviar correos duplicados; la alerta sigue consultable en la API.
 """
-import json
 import logging
 import threading
 import time
@@ -19,6 +19,7 @@ from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 
 from common import config, tables
+from common.resumen import MAX_DETALLE as _MAX_DETALLE, resumen as _resumen, riesgo as riesgo_resumen
 
 log = logging.getLogger("fraudlens.alertas")
 FMT_TS = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'"
@@ -76,7 +77,7 @@ def escribir_dynamodb(filas):
 # riesgo. El primero sale de inmediato; los siguientes esperan al menos NOTIFICAR_CADA_SEGUNDOS. Lo pendiente lo envía
 # `enviar_pendientes()`, que el job llama en cada latido. Las dos consultas del streaming (ingesta y R1) corren en
 # hilos distintos del driver: el estado se protege con un candado.
-MAX_DETALLE = 100           # alertas que se listan en el correo (~13 KB; el límite de un mensaje de SNS es 256 KB)
+MAX_DETALLE = _MAX_DETALLE  # alertas que se listan en el correo (~13 KB; el límite de un mensaje de SNS es 256 KB)
 _MAX_GUARDADAS = MAX_DETALLE  # se guardan solo las de mayor riesgo; el resto solo se cuenta
 _candado = threading.Lock()
 _pendiente = {"conteo": {}, "alertas": [], "primera": None}
@@ -88,46 +89,12 @@ def _cada_segundos():
 
 
 def _riesgo(a):
-    """Orden del correo: primero R4 por puntaje; luego las demás por monto."""
-    puntaje = None
-    if a.get("regla") == "R4":
-        try:
-            puntaje = json.loads(a.get("detalle") or "{}").get("puntaje")
-        except ValueError:
-            puntaje = None
-    return (0, -(puntaje or 0)) if puntaje is not None else (1, -float(a.get("monto_total") or 0))
+    return riesgo_resumen(a)
 
 
 def resumen(conteo, alertas, desde=None):
-    """(asunto, cuerpo) del correo para `conteo` {regla: n} y las alertas de mayor riesgo."""
-    total = sum(conteo.values())
-    por_regla = ", ".join("%s: %d" % (r, conteo[r]) for r in sorted(conteo))
-    asunto = ("FraudLens: %d alerta%s nueva%s (%s)" % (total, "" if total == 1 else "s", "" if total == 1 else "s",
-                                                      por_regla))[:100]
-    lineas = ["FraudLens detectó %d alerta%s nueva%s%s." % (total, "" if total == 1 else "s", "" if total == 1 else "s",
-                                                           " desde %s" % desde if desde else ""), "",
-              "Por regla: " + por_regla, "",
-              ("Todas, de mayor a menor riesgo:" if total <= MAX_DETALLE else
-               "Las %d de mayor riesgo (de %d):" % (min(MAX_DETALLE, len(alertas)), total)),
-              "regla | cliente | transacción | tipo | monto | hora del pago | puntaje"]
-    for a in sorted(alertas, key=_riesgo)[:MAX_DETALLE]:
-        extra = ""
-        if a.get("regla") == "R4":
-            try:
-                extra = " | %.2f" % json.loads(a.get("detalle") or "{}")["puntaje"]
-            except (ValueError, KeyError, TypeError):
-                extra = ""
-        lineas.append("- %s | %s | %s | %s | %s | %s%s" % (
-            a.get("regla"), a.get("id_cliente"), a.get("id_transaccion") or "(ventana de 5 min)",
-            a.get("id_comercio") or "-", a.get("monto_total"), a.get("ts_evento"), extra or " | -"))
-    if total > MAX_DETALLE:
-        lineas.append("... y %d más." % (total - MAX_DETALLE))
-    filtro = "&desde=%s" % desde if desde else ""
-    lineas += ["", "Cada alerta tiene todos sus campos en la tabla %s de DynamoDB y en la API:" % config.DYNAMODB_TABLE,
-               "  todas las de este correo:   GET /alertas?limite=500%s" % filtro,
-               "  solo las del modelo (R4):   GET /alertas?regla=R4%s" % filtro,
-               "  las de un cliente:          GET /alertas?id_cliente=<cliente>"]
-    return asunto, "\n".join(lineas)
+    """(asunto, cuerpo) del correo: el texto lo arma common/resumen.py (el mismo que usa la Lambda notificadora)."""
+    return _resumen(conteo, alertas, desde, tabla=config.DYNAMODB_TABLE)
 
 
 def _enviar(asunto, cuerpo):
@@ -158,9 +125,17 @@ def enviar_pendientes(forzar=False, ahora=None):
     return n
 
 
+def notifica_la_lambda():
+    """NOTIFICAR_DESDE=lambda: el correo lo manda la Lambda notificadora leyendo el stream de DynamoDB (D3)."""
+    return (config.env("NOTIFICAR_DESDE", "spark") or "spark").lower() == "lambda"
+
+
 def notificar(nuevas, ahora=None):
-    """Acumula las alertas nuevas y envía el resumen si ya toca. Devuelve cuántas alertas cubrió el envío."""
-    if not nuevas:
+    """Acumula las alertas nuevas y envía el resumen si ya toca. Devuelve cuántas alertas cubrió el envío.
+
+    Con NOTIFICAR_DESDE=lambda no hace nada: el streaming solo escribe en DynamoDB y la Lambda notificadora arma el
+    resumen desde el stream de la tabla (así Spark no espera a SNS y los reintentos y fallos quedan en AWS)."""
+    if not nuevas or notifica_la_lambda():
         return 0
     with _candado:
         for a in nuevas:
