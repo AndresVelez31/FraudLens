@@ -170,8 +170,32 @@ def notificar(nuevas, ahora=None):
     return enviar_pendientes(ahora=ahora)
 
 
+def es_conflicto_delta(error):
+    """True si `error` es un conflicto de escritura concurrente de Delta (ConcurrentAppendException y similares)."""
+    nombres = [type(error).__name__, str(getattr(error, "desc", "")), str(error)[:300]]
+    return any("Concurrent" in n or "ConcurrentModification" in n for n in nombres)
+
+
+def con_reintentos(funcion, intentos=5, espera_s=1.0, dormir=time.sleep):
+    """Ejecuta `funcion` y, si choca con otra escritura de Delta, la repite con espera creciente (el MERGE es
+    idempotente, así que repetirlo es seguro). Cualquier otro error se propaga de inmediato."""
+    for i in range(intentos):
+        try:
+            return funcion()
+        except Exception as e:  # noqa: BLE001
+            if not es_conflicto_delta(e) or i == intentos - 1:
+                raise
+            log.warning("conflicto de escritura en Delta (%s); reintento %d de %d", type(e).__name__, i + 1, intentos - 1)
+            dormir(espera_s * (2 ** i))
+
+
 def merge_silver(spark, alertas_df, ts_alerta, batch_id):
-    """Inserta la alerta nueva o actualiza los acumulados de una ventana de R1 ya registrada."""
+    """Inserta la alerta nueva o actualiza los acumulados de una ventana de R1 ya registrada.
+
+    Las dos consultas del streaming (ingesta con R2/R3/R4 y la de R1) escriben en esta tabla a la vez. Para que sus
+    MERGE no choquen (D1, hallazgo 3): la tabla se particiona por regla y cada MERGE fija su regla con un literal,
+    así Delta sabe que tocan particiones distintas. Si aun así hay conflicto (tabla vieja sin particionar), se
+    reintenta."""
     df = (
         alertas_df.withColumn("ts_alerta", F.lit(ts_alerta))
         .withColumn("batch_id", F.lit(str(batch_id)))
@@ -184,14 +208,20 @@ def merge_silver(spark, alertas_df, ts_alerta, batch_id):
         )
         .dropDuplicates(["id_alerta"])
     )
-    (
-        DeltaTable.forPath(spark, tables.ruta("silver_alertas"))
-        .alias("t")
-        .merge(df.alias("s"), "t.id_alerta = s.id_alerta")
-        .whenMatchedUpdate(set={"n_tx": "s.n_tx", "monto_total": "s.monto_total", "detalle": "s.detalle"})
-        .whenNotMatchedInsertAll()
-        .execute()
-    )
+    for regla in sorted(r["regla"] for r in df.select("regla").distinct().collect()):
+        parte = df.where(F.col("regla") == regla)
+
+        def _merge(parte=parte, regla=regla):
+            (
+                DeltaTable.forPath(spark, tables.ruta("silver_alertas"))
+                .alias("t")
+                .merge(parte.alias("s"), "t.regla = '%s' AND t.id_alerta = s.id_alerta" % regla)
+                .whenMatchedUpdate(set={"n_tx": "s.n_tx", "monto_total": "s.monto_total", "detalle": "s.detalle"})
+                .whenNotMatchedInsertAll()
+                .execute()
+            )
+
+        con_reintentos(_merge)
 
 
 def publicar(spark, alertas_df, batch_id):
