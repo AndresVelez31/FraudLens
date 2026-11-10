@@ -5,7 +5,10 @@
 * `check_streaming_vivo` lee el latido del job de streaming y falla si lleva más de 2 minutos sin avanzar.
 * Con `all_success`, un fallo en cualquier paso detiene los siguientes (nada llega a Gold a medias).
 * Cada tarea reintenta 3 veces con espera exponencial y, si sigue fallando, avisa por SNS.
-* Evento -> Gold queda en máximo ~15 min: el DAG corre cada 10 y dura pocos minutos (RNF-04).
+* Evento -> Gold queda en máximo ~20 min: el DAG corre cada 10 y dura unos 6 a 9 minutos, casi todo arranque de
+  Spark y lectura de Silver; si una corrida se alarga, la siguiente espera (max_active_runs=1).
+* El OPTIMIZE (compactar y ordenar los hechos) corre una vez al día en `catalogos_diario`: hacerlo cada 10 min
+  reescribía las tablas completas en cada corrida.
 """
 from datetime import datetime, timedelta
 
@@ -38,7 +41,7 @@ with DAG(
     catchup=False,
     max_active_runs=1,  # si una corrida se alarga, la siguiente espera: no se pisan
     default_args=ARGS_POR_DEFECTO,
-    dagrun_timeout=timedelta(minutes=9),
+    dagrun_timeout=timedelta(minutes=15),
     tags=["fraudlens", "gold"],
 ) as dag:
     check_streaming_vivo = PythonOperator(task_id="check_streaming_vivo", python_callable=verificar_streaming)
@@ -47,6 +50,6 @@ with DAG(
     quality_checks = BashOperator(task_id="quality_checks", bash_command=comando("batch.calidad"))
     registrar_glue = BashOperator(
         task_id="registrar_glue",
-        bash_command=" && ".join([comando("batch.publicar", p) for p in ("optimize", "glue", "metabase")]),
+        bash_command=comando("batch.publicar", "glue"),
     )
     check_streaming_vivo >> gold_dimensiones >> gold_hechos >> quality_checks >> registrar_glue

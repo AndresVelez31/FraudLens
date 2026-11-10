@@ -53,7 +53,9 @@ with DAG(
         task_id="sensor_csv_riesgo", python_callable=hay_csv_de_riesgo, poke_interval=15, timeout=600, mode="reschedule")
     load_bronze = BashOperator(task_id="load_bronze", bash_command=comando("batch.catalogos", "load_bronze"))
     silver_catalogos = BashOperator(task_id="silver_catalogos", bash_command=comando("batch.catalogos", "spark_silver"))
-    extract_postgres >> sensor_csv_riesgo >> load_bronze >> silver_catalogos
+    # Una vez al día se compactan y ordenan los hechos de Gold (OPTIMIZE + ZORDER) para que Athena lea menos.
+    optimize_gold = BashOperator(task_id="optimize_gold", bash_command=comando("batch.publicar", "optimize"))
+    extract_postgres >> sensor_csv_riesgo >> load_bronze >> silver_catalogos >> optimize_gold
 
 
 # "Al llegar un CSV": cada 5 minutos mira landing y, si hay una versión sin cargar, lanza catalogos_diario.

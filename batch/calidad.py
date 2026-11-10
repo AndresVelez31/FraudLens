@@ -31,7 +31,11 @@ def verificar(spark, ventana_min=60, dias=2):
     """Devuelve la lista de problemas encontrados (vacía si todo está bien) y las métricas."""
     problemas, m = [], {}
     corte = datetime.now(timezone.utc) - timedelta(minutes=ventana_min)
-    llegada = F.col("ingest_ts") >= F.lit(datetime.now(timezone.utc) - timedelta(days=dias))
+    # Lo que llegó en los últimos `dias`, pero sin retroceder antes de la marca de agua de Gold (como en batch.gold):
+    # con una carga grande en el mismo día, revisar "2 días" era revisar todo el lake en cada corrida.
+    from batch import gold
+    gold.fijar_marca(spark)
+    llegada = F.col("ingest_ts") >= F.lit(gold.corte_ingesta(dias))
 
     bronce = leer(spark, tables.ruta("bronze_transacciones")).where(F.col("ingest_ts") >= F.lit(corte))
     cuar = leer(spark, tables.ruta("silver_cuarentena")).where(F.col("ingest_ts") >= F.lit(corte))
