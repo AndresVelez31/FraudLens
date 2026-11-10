@@ -179,3 +179,16 @@ def test_el_corte_no_retrocede_antes_de_la_marca_de_agua():
         assert ahora - gold.corte_ingesta(2) < timedelta(days=2, minutes=1)   # una marca vieja no amplía la ventana
     finally:
         gold._MARCA["ts"] = None
+
+
+
+def test_la_latencia_se_mide_desde_la_llegada_que_provoco_la_alerta(spark):
+    """Un pago reenviado (demo) usa su último envío antes de la alerta; un duplicado posterior no cuenta."""
+    t = lambda m: AHORA + timedelta(minutes=m)  # noqa: E731
+    llegadas = spark.createDataFrame(
+        [("T1", [(t(-600), t(-601), t(-602)), (t(0), t(-1), t(-2)), (t(30), t(29), t(28))])],
+        "id_transaccion string, llegadas array<struct<ts_lote:timestamp, ts_kafka:timestamp, ts_emision:timestamp>>")
+    alertas = spark.createDataFrame([("A1", "T1", t(2))], "id_alerta string, id_transaccion string, ts_alerta timestamp")
+    fila = gold.con_llegada(alertas.join(llegadas, "id_transaccion", "left")).first()
+    assert fila.ts_lote == t(0) and fila.ts_emision == t(-2)        # el envío de hoy, no el de hace 10 h ni el posterior
+    assert "llegadas" not in fila.asDict()

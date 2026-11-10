@@ -166,12 +166,15 @@ import json, sys
 for r in json.load(sys.stdin)["ResultSet"]["Rows"]:
     print(" | ".join(c.get("VarCharValue", "") for c in r["Data"]))'
     ;;
-  airflow)
+  airflow|api)
+    # Recién instalado, el plugin no está en el PATH de las terminales que ya estaban abiertas.
+    [ -d "/c/Program Files/Amazon/SessionManagerPlugin/bin" ] && PATH="$PATH:/c/Program Files/Amazon/SessionManagerPlugin/bin"
     command -v session-manager-plugin >/dev/null 2>&1 || {
       echo "Falta el Session Manager plugin del AWS CLI (instalador oficial de AWS). Sin él, usa: bash scripts/demo_aws.sh gold"; exit 1; }
-    echo "Airflow en http://localhost:8081 (Ctrl+C para cerrar el túnel)"
+    if [ "$caso" = airflow ]; then puerto=8081; else puerto=8080; fi
+    echo "$caso en http://localhost:$puerto (Ctrl+C para cerrar el túnel; la API tiene su documentación en /docs)"
     aws ssm start-session --target "$EC2_B" --document-name AWS-StartPortForwardingSession \
-      --parameters '{"portNumber":["8081"],"localPortNumber":["8081"]}'
+      --parameters "{\"portNumber\":[\"$puerto\"],\"localPortNumber\":[\"$puerto\"]}"
     ;;
   apagar)
     aws ec2 stop-instances --instance-ids "$EC2_A" "$EC2_B" --query "StoppingInstances[].[InstanceId,CurrentState.Name]" --output text

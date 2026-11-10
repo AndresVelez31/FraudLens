@@ -248,7 +248,7 @@ def hechos(spark, dias):
     alertas = spark.read.format("delta").load(tables.ruta("silver_alertas"))
     if incremental:
         alertas = llegadas(alertas, dias)
-    al = alertas.join(tiempos_de_llegada(spark, dias if incremental else None), "id_transaccion", "left").select(
+    al = con_llegada(alertas.join(tiempos_de_llegada(spark, dias if incremental else None), "id_transaccion", "left")).select(
         "id_alerta", "rule_version", F.col("regla").alias("id_regla"), "id_transaccion", "id_cliente", "id_comercio",
         "ts_evento", "ts_alerta", "ventana_inicio", "ventana_fin", "n_tx", "monto_total",
         F.get_json_object("detalle", "$.puntaje").cast("double").alias("puntaje"),
@@ -280,13 +280,25 @@ COLUMNAS_LATENCIA = ["ts_emision", "latencia_s", "lat_envio_s", "lat_cola_s", "l
 
 
 def tiempos_de_llegada(spark, dias=None):
-    """Por transacción: emisión, llegada a Kafka y entrada al streaming (la primera vez, si se reenvió)."""
+    """Por transacción, todas sus llegadas a Bronze: entrada al streaming, llegada a Kafka y emisión (una por envío)."""
     br = spark.read.format("delta").load(tables.ruta("bronze_transacciones")).where(F.col("id_transaccion").isNotNull())
     if dias is not None:
         br = br.where(F.col("ingest_ts") >= F.lit(corte_ingesta(dias + 1)))
-    return br.groupBy("id_transaccion").agg(
-        F.min(F.to_timestamp(F.get_json_object("value", "$.ts_emision"))).alias("ts_emision"),
-        F.min("kafka_timestamp").alias("ts_kafka"), F.min("ingest_ts").alias("ts_lote"))
+    return br.groupBy("id_transaccion").agg(F.collect_list(F.struct(
+        F.col("ingest_ts").alias("ts_lote"), F.col("kafka_timestamp").alias("ts_kafka"),
+        F.to_timestamp(F.get_json_object("value", "$.ts_emision")).alias("ts_emision"))).alias("llegadas"))
+
+
+def con_llegada(alertas):
+    """Elige, para cada alerta, la llegada que la provocó: la más reciente que entró al streaming antes de la alerta.
+
+    Con la primera llegada, un pago que se vuelve a enviar (la demo reserva y reenvía los últimos pagos) medía su
+    latencia desde el primer envío, horas antes; y un duplicado que llega después de la alerta (el replayer reanudado)
+    no debe contar. Deja las columnas ts_emision, ts_kafka y ts_lote que usa `latencias`."""
+    elegida = F.expr("array_max(filter(llegadas, x -> x.ts_lote <= ts_alerta))")   # el struct compara por ts_lote
+    return (alertas.withColumn("_llegada", elegida)
+            .withColumn("ts_emision", F.col("_llegada.ts_emision")).withColumn("ts_kafka", F.col("_llegada.ts_kafka"))
+            .withColumn("ts_lote", F.col("_llegada.ts_lote")).drop("_llegada", "llegadas"))
 
 
 def _seg(a, b):
