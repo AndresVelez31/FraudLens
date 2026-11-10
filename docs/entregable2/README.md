@@ -3,6 +3,9 @@
 * `FraudLens_E2.pdf`: slides de la sustentación (15). La versión editable, con las notas del orador, es el deck en
   Claude compartido con el equipo por enlace. Reemplaza a `FraudLens_E2.pptx`, que describía el sistema antes de la
   carga real (Learner Lab, Metabase, R1–R3).
+* `guia_estudio_fraudlens.pdf`: guía de estudio completa (25 páginas, con diagramas): el problema, los datos, cada
+  tecnología y por qué se eligió, el flujo de un pago, el streaming por dentro, reglas y modelo, Gold, Airflow, alertas,
+  confiabilidad, resultados, latencia, AWS, cambios frente al E1, la demo y un glosario.
 * `guia_defensa.md`: cifras que hay que saber de memoria, checklist previo, preguntas probables con respuesta corta
   (datos y medición, reglas y modelo, confiabilidad, lakehouse, costo y lo que no cumplimos) y reparto por integrante.
 * La demo se sigue desde el README de la raíz (sección «Demo paso a paso»).
