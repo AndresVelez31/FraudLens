@@ -17,6 +17,7 @@ x-env: &env
   DYNAMODB_ENDPOINT: ${DYNAMODB_ENDPOINT:-}  # vacío = DynamoDB real
   SNS_TOPIC_ARN: ${SNS_TOPIC_ARN:-}          # vacío = la alerta solo se registra en el log
   NOTIFICAR_CADA_SEGUNDOS: ${NOTIFICAR_CADA_SEGUNDOS:-300}   # como máximo un correo resumen cada 5 min
+  NOTIFICAR_DESDE: ${NOTIFICAR_DESDE:-spark}   # spark (resumen desde el streaming) o lambda (Lambda notificadora, D3)
   GLUE_DATABASE: ${GLUE_DATABASE:-fraudlens}
   ATHENA_WORKGROUP: ${ATHENA_WORKGROUP:-fraudlens}
   KAFKA_BOOTSTRAP_SERVERS: ${KAFKA_BOOTSTRAP_SERVERS:-kafka-1:29092,kafka-2:29092,kafka-3:29092}

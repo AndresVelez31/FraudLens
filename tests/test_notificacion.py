@@ -78,3 +78,9 @@ def test_con_sns_real_simulado_se_publica_un_solo_mensaje(monkeypatch):
         alerts.notificar([_r4(i, 0.3) for i in range(120)], ahora=0)
         enviados = sns_backends[DEFAULT_ACCOUNT_ID][config.REGION].topics[arn].sent_notifications
         assert len(enviados) == 1 and "120 alertas nuevas" in enviados[0][2]   # (id, mensaje, asunto, ...)
+
+
+def test_con_notificar_desde_lambda_el_streaming_no_manda_correos(enviados, monkeypatch):
+    monkeypatch.setenv("NOTIFICAR_DESDE", "lambda")
+    assert alerts.notificar([_r4(1, 0.5)], ahora=0) == 0
+    assert enviados == [] and alerts.enviar_pendientes(forzar=True) == 0
