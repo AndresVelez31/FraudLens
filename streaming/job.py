@@ -275,11 +275,13 @@ def main():
             if q.exception():
                 raise q.exception()  # el contenedor se reinicia y retoma desde el checkpoint
         lake.escribir_latido({"queries": [q_ingesta.name, q_r1.name], "activas": all(q.isActive for q in (q_ingesta, q_r1))})
+        alerts.enviar_pendientes()   # el resumen de alertas que quedó esperando el intervalo
         if args.max_segundos and time.time() - inicio > args.max_segundos:
             break
         time.sleep(10)
     q_ingesta.stop()
     q_r1.stop()
+    alerts.enviar_pendientes(forzar=True)
     spark.stop()
 
 
