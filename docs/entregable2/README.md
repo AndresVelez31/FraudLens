@@ -13,3 +13,8 @@
   modelos base tabulares) y en qué punto queda FraudLens, con las arquitecturas de referencia de AWS y referencias (J2).
 * `cambios_frente_e1.md`: qué cambió frente al Entregable 1 y por qué, y el estado de cada requisito no funcional con
   las cifras medidas (J2).
+
+## Entrega final
+
+Repositorio: https://github.com/AndresVelez31/FraudLens. Se entrega con un PR al repositorio del curso
+(asacrea/st1630-252#45) que enlaza este repositorio.
