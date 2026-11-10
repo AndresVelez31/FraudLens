@@ -174,7 +174,7 @@ services:
         fi
         # En AWS el bucket, la tabla y el topic ya existen (se crean una vez desde la consola o con crear_recursos.py --todo).
         if [ -n "$${CATALOGOS_ORIGEN}" ]; then
-          # $atos reales: los catálogos de IEEE-CIS que dejó scripts/preparar_ieee.py en el lake reemplazan a los
+          # Datos reales: los catálogos de IEEE-CIS que dejó scripts/preparar_ieee.py en el lake reemplazan a los
           # sintéticos. La lista de riesgo (riesgo_v100.csv) ya está en landing; no se sube la sintética.
           python -m producer.catalogo --postgres --desde-csv "$${CATALOGOS_ORIGEN}" --reemplazar
           exit 0
