@@ -71,6 +71,48 @@
               },
               "queryRef": "fact_alertas.Latencia P95 (s)",
               "nativeQueryRef": "Latencia P95 (s)"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_alertas"
+                    }
+                  },
+                  "Property": "Envío prom. (s)"
+                }
+              },
+              "queryRef": "fact_alertas.Envío prom. (s)",
+              "nativeQueryRef": "Envío prom. (s)"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_alertas"
+                    }
+                  },
+                  "Property": "Cola prom. (s)"
+                }
+              },
+              "queryRef": "fact_alertas.Cola prom. (s)",
+              "nativeQueryRef": "Cola prom. (s)"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_alertas"
+                    }
+                  },
+                  "Property": "Reglas prom. (s)"
+                }
+              },
+              "queryRef": "fact_alertas.Reglas prom. (s)",
+              "nativeQueryRef": "Reglas prom. (s)"
             }
           ]
         }
@@ -108,7 +150,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'P5 · Alertas y latencia por regla'"
+                  "Value": "'P5 · Alertas y latencia por regla (desde que se emite el pago; tramos: envío, cola, reglas)'"
                 }
               }
             }
@@ -117,64 +159,6 @@
       ]
     },
     "objects": {
-      "columnWidth": [
-        {
-          "properties": {
-            "value": {
-              "expr": {
-                "Literal": {
-                  "Value": "330D"
-                }
-              }
-            }
-          },
-          "selector": {
-            "metadata": "dim_regla.nombre"
-          }
-        },
-        {
-          "properties": {
-            "value": {
-              "expr": {
-                "Literal": {
-                  "Value": "150D"
-                }
-              }
-            }
-          },
-          "selector": {
-            "metadata": "fact_alertas.Alertas"
-          }
-        },
-        {
-          "properties": {
-            "value": {
-              "expr": {
-                "Literal": {
-                  "Value": "180D"
-                }
-              }
-            }
-          },
-          "selector": {
-            "metadata": "fact_alertas.Latencia promedio (s)"
-          }
-        },
-        {
-          "properties": {
-            "value": {
-              "expr": {
-                "Literal": {
-                  "Value": "180D"
-                }
-              }
-            }
-          },
-          "selector": {
-            "metadata": "fact_alertas.Latencia P95 (s)"
-          }
-        }
-      ],
       "values": [
         {
           "properties": {
