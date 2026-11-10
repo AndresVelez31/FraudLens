@@ -19,7 +19,7 @@ def enviados(monkeypatch):
 
 def _r4(i, puntaje):
     return {"id_alerta": "a%d" % i, "regla": "R4", "id_cliente": "C%d" % i, "id_transaccion": "T%d" % i,
-            "monto_total": 10.0, "ts_evento": "2026-05-02T00:00:00.000Z", "ts_alerta": "2026-11-10T00:00:00.000Z",
+            "id_comercio": "W", "monto_total": 10.0, "ts_evento": "2026-05-02T00:00:00.000Z", "ts_alerta": "2026-11-10T00:00:00.000Z",
             "detalle": json.dumps({"puntaje": puntaje, "umbral": 0.155})}
 
 
@@ -43,7 +43,16 @@ def test_el_resumen_lista_primero_las_de_mayor_riesgo(enviados):
     assert asunto == "FraudLens: 4 alertas nuevas (R3: 1, R4: 3)"
     filas = [l for l in cuerpo.splitlines() if l.startswith("- ")]
     assert [f.split("|")[2].split()[-1] for f in filas] == ["T2", "T3", "T1", "T9"]   # R4 por puntaje, luego el resto
-    assert "puntaje 0.90" in filas[0]
+    assert filas[0].endswith("| 0.90") and "| W |" not in filas[3]   # R3 sin tipo: "-"
+    assert "GET /alertas?regla=R4&desde=2026-11-10T00:00:00.000Z" in cuerpo
+
+
+def test_con_mas_de_100_dice_cuantas_faltan(enviados):
+    alerts.notificar([_r4(i, i / 1000) for i in range(130)], ahora=0)
+    asunto, cuerpo = enviados[0]
+    assert len([l for l in cuerpo.splitlines() if l.startswith("- ")]) == 100
+    assert "Las 100 de mayor riesgo (de 130)" in cuerpo and "... y 30 más." in cuerpo
+    assert len(cuerpo.encode()) < 256 * 1024
 
 
 def test_sin_sns_configurado_no_falla(monkeypatch):

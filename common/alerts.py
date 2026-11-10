@@ -76,8 +76,8 @@ def escribir_dynamodb(filas):
 # riesgo. El primero sale de inmediato; los siguientes esperan al menos NOTIFICAR_CADA_SEGUNDOS. Lo pendiente lo envía
 # `enviar_pendientes()`, que el job llama en cada latido. Las dos consultas del streaming (ingesta y R1) corren en
 # hilos distintos del driver: el estado se protege con un candado.
-MAX_DETALLE = 10            # alertas que se listan en el correo
-_MAX_GUARDADAS = 50         # candidatas que se guardan para elegir las de mayor riesgo (el resto solo se cuenta)
+MAX_DETALLE = 100           # alertas que se listan en el correo (~13 KB; el límite de un mensaje de SNS es 256 KB)
+_MAX_GUARDADAS = MAX_DETALLE  # se guardan solo las de mayor riesgo; el resto solo se cuenta
 _candado = threading.Lock()
 _pendiente = {"conteo": {}, "alertas": [], "primera": None}
 _ultimo_envio = [None]
@@ -106,18 +106,27 @@ def resumen(conteo, alertas, desde=None):
                                                       por_regla))[:100]
     lineas = ["FraudLens detectó %d alerta%s nueva%s%s." % (total, "" if total == 1 else "s", "" if total == 1 else "s",
                                                            " desde %s" % desde if desde else ""), "",
-              "Por regla: " + por_regla, "", "Las %d de mayor riesgo:" % min(MAX_DETALLE, len(alertas))]
+              "Por regla: " + por_regla, "",
+              ("Todas, de mayor a menor riesgo:" if total <= MAX_DETALLE else
+               "Las %d de mayor riesgo (de %d):" % (min(MAX_DETALLE, len(alertas)), total)),
+              "regla | cliente | transacción | tipo | monto | hora del pago | puntaje"]
     for a in sorted(alertas, key=_riesgo)[:MAX_DETALLE]:
         extra = ""
         if a.get("regla") == "R4":
             try:
-                extra = " | puntaje %.2f" % json.loads(a.get("detalle") or "{}")["puntaje"]
+                extra = " | %.2f" % json.loads(a.get("detalle") or "{}")["puntaje"]
             except (ValueError, KeyError, TypeError):
                 extra = ""
-        lineas.append("- %s | cliente %s | transacción %s | monto %s | %s%s" % (
-            a.get("regla"), a.get("id_cliente"), a.get("id_transaccion") or "(ventana)", a.get("monto_total"),
-            a.get("ts_evento"), extra))
-    lineas += ["", "El detalle de todas está en la API (GET /alertas) y en la tabla %s de DynamoDB." % config.DYNAMODB_TABLE]
+        lineas.append("- %s | %s | %s | %s | %s | %s%s" % (
+            a.get("regla"), a.get("id_cliente"), a.get("id_transaccion") or "(ventana de 5 min)",
+            a.get("id_comercio") or "-", a.get("monto_total"), a.get("ts_evento"), extra or " | -"))
+    if total > MAX_DETALLE:
+        lineas.append("... y %d más." % (total - MAX_DETALLE))
+    filtro = "&desde=%s" % desde if desde else ""
+    lineas += ["", "Cada alerta tiene todos sus campos en la tabla %s de DynamoDB y en la API:" % config.DYNAMODB_TABLE,
+               "  todas las de este correo:   GET /alertas?limite=500%s" % filtro,
+               "  solo las del modelo (R4):   GET /alertas?regla=R4%s" % filtro,
+               "  las de un cliente:          GET /alertas?id_cliente=<cliente>"]
     return asunto, "\n".join(lineas)
 
 

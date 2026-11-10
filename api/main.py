@@ -79,7 +79,7 @@ def consultar(id_cliente=None, regla=None, desde=None, hasta=None, limite=50):
 @app.get("/alertas")
 def alertas(
     id_cliente: str | None = Query(None, description="Cliente, p. ej. C0000123"),
-    regla: str | None = Query(None, pattern="^R[1-3]$", description="R1, R2 o R3"),
+    regla: str | None = Query(None, pattern="^R[1-4]$", description="R1, R2, R3 o R4 (modelo)"),
     desde: str | None = Query(None, description="ISO 8601 UTC, p. ej. 2026-11-04T00:00:00.000Z"),
     hasta: str | None = Query(None, description="ISO 8601 UTC"),
     limite: int = Query(50, ge=1, le=LIMITE_MAXIMO),
