@@ -6,3 +6,7 @@
 * `arquitectura.drawio` (editable en app.diagrams.net o draw.io Desktop), `arquitectura.png` y `arquitectura.svg`: arquitectura
   actual en AWS us-east-2 con las cifras medidas en la carga real de IEEE-CIS (tarea J1). Reemplaza al diagrama del E1
   (`docs/entregable1/arquitectura.*`, Learner Lab us-east-1, 3 EC2 y Metabase).
+* `estado_del_arte.md`: cómo se detecta fraude hoy (reglas, aprendizaje con etiquetas tardías, árboles con gradiente,
+  modelos base tabulares) y en qué punto queda FraudLens, con las arquitecturas de referencia de AWS y referencias (J2).
+* `cambios_frente_e1.md`: qué cambió frente al Entregable 1 y por qué, y el estado de cada requisito no funcional con
+  las cifras medidas (J2).
