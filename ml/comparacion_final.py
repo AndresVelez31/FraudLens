@@ -12,7 +12,9 @@ Escenarios (todos sobre las mismas 118.108 transacciones de prueba):
   4. Combinaciones con el mismo presupuesto: se conservan unas alertas de reglas y el modelo llena el cupo que queda.
      a) R2 y R3 (las reglas precisas) + modelo, sin R1 (la ruidosa).
      b) La mitad de las alertas de reglas con mayor puntaje + modelo.
-  5. Modelo "vesta" (referencia del estado del arte, con variables que el evento no trae).
+  5. Lo que corre en el streaming (tarea D5): R2, R3 y R4 con el umbral fijo de data/modelos/lightgbm_contrato.json,
+     elegido en la validación del entrenamiento (sin mirar la prueba). Aquí el presupuesto no se fuerza: sale solo.
+  6. Modelo "vesta" (referencia del estado del arte, con variables que el evento no trae).
 
   docker run --rm -v "$PWD:/opt/fraudlens" fraudlens-ml python ml/comparacion_final.py
 
@@ -27,6 +29,7 @@ import pandas as pd
 
 MARCAS = "data/evaluacion/marcas_prueba_ieee.csv"
 PUNTAJES = "data/modelos/puntajes_prueba.csv"
+UMBRAL_R4 = "data/modelos/lightgbm_contrato.json"
 SALIDA = "docs/evaluacion"
 
 
@@ -74,7 +77,7 @@ def metricas(y, monto, alertas):
     }
 
 
-def escenarios(df):
+def escenarios(df, umbral_r4=None):
     y, monto = df["is_fraud"].to_numpy(), df["monto"].to_numpy()
     reglas = ((df["r1"] + df["r2"] + df["r3"]) > 0).astype(int).to_numpy()
     s = df["puntaje_contrato"].to_numpy()
@@ -88,6 +91,9 @@ def escenarios(df):
     filas.append(("R2 y R3 + modelo (sin R1), mismo presupuesto", "hibrido", hibrido(r23, s, presupuesto)))
     filas.append(("Mitad de las reglas con mayor puntaje + modelo, mismo presupuesto", "hibrido",
                   hibrido(filtrar_por_puntaje(reglas, s, 0.5), s, presupuesto)))
+    if umbral_r4 is not None:
+        r4 = (s >= umbral_r4).astype(int)
+        filas.append(("Streaming (D5): R2, R3 y R4 con umbral fijo %.3f" % umbral_r4, "despliegue", np.maximum(r23, r4)))
     if "puntaje_vesta" in df:
         filas.append(("Modelo \"vesta\" (referencia, mismo presupuesto)", "referencia",
                       top_k(df["puntaje_vesta"].to_numpy(), presupuesto)))
@@ -132,7 +138,8 @@ def main():
     df = pd.read_csv(a.marcas).merge(pd.read_csv(a.puntajes), on="id_transaccion", how="inner", validate="1:1")
     marcas_n = len(pd.read_csv(a.marcas, usecols=["id_transaccion"]))
     assert len(df) == marcas_n, "las marcas y los puntajes no cubren las mismas transacciones (%d vs %d)" % (len(df), marcas_n)
-    res = escenarios(df)
+    umbral = json.load(open(UMBRAL_R4, encoding="utf-8"))["umbral"] if os.path.exists(UMBRAL_R4) else None
+    res = escenarios(df, umbral)
     os.makedirs(SALIDA, exist_ok=True)
     with open(os.path.join(SALIDA, "comparacion_final.json"), "w", encoding="utf-8") as f:
         json.dump(res, f, ensure_ascii=False, indent=2)
