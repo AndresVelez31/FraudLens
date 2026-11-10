@@ -1,7 +1,10 @@
 # Entregable 2
 
-* `FraudLens_E2.pptx`: slides de la sustentación (14, máximo 15), con notas del orador.
-* `guia_defensa.md`: checklist previo, preguntas probables con respuesta corta y reparto de estudio por integrante.
+* Slides de la sustentación (15, con notas del orador): deck en Claude, compartido con el equipo por enlace. Se
+  descarga en .pptx o PDF desde el mismo deck. Reemplaza a `FraudLens_E2.pptx`, que describía el sistema antes de la
+  carga real (Learner Lab, Metabase, R1–R3).
+* `guia_defensa.md`: cifras que hay que saber de memoria, checklist previo, preguntas probables con respuesta corta
+  (datos y medición, reglas y modelo, confiabilidad, lakehouse, costo y lo que no cumplimos) y reparto por integrante.
 * La demo se sigue desde el README de la raíz (sección «Demo paso a paso»).
 * `arquitectura.drawio` (editable en app.diagrams.net o draw.io Desktop), `arquitectura.png` y `arquitectura.svg`: arquitectura
   actual en AWS us-east-2 con las cifras medidas en la carga real de IEEE-CIS (tarea J1). Reemplaza al diagrama del E1

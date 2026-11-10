@@ -18,4 +18,7 @@ Cada integrante agrega una fila por tarea en la que use un agente: qué delegó 
 | E2 | docker-compose, Dockerfiles, `init.sql` y `.env.example` | Sí | Generados por el agente. Validados solo con `docker compose config`; el equipo debe levantarlos y corregir lo que falle. |
 | E2 | Pruebas (pytest y prueba end-to-end sin Docker con Kafka local, Spark y DynamoDB simulado) | Sí | El agente las escribió y las ejecutó; los resultados y límites están en el README (sección «Qué se probó y qué no»). |
 | E2 | README, esta bitácora, slides y guía de defensa | Sí | Redactados por el agente; el equipo debe revisarlos y ajustarlos a lo que realmente ejecute en la demo. |
-| E2 | Revisión del código, ejecución de la demo en el Learner Lab, medición de latencia y apertura del PR | No | Pendiente del equipo. Completar aquí quién revisó qué y qué se cambió. |
+| E2 | Datos reales IEEE-CIS: preparación, calibración de reglas, modelo LightGBM (R4) y evaluación por partición temporal | Parcial | El agente escribió los scripts y propuso la métrica con presupuesto de alertas; el equipo eligió apagar R1 y aprobó el umbral. |
+| E2 | Carga real en AWS (us-east-2), latencia por tramos, idempotencia, Lambda notificador y Power BI | Parcial | El agente ejecutó la carga y los despliegues por SSM y escribió el código; el equipo revisó los resultados, los correos y el tablero. |
+| E2 | Diagrama de arquitectura, estado del arte, cambios frente al E1, slides y guía de defensa | Sí | Redactados por el agente con cifras medidas; el equipo pidió los cambios de forma del diagrama y debe validar el contenido. |
+| E2 | Revisión del código, simulacro de la sustentación y apertura del PR final | No | Pendiente del equipo. Completar aquí quién revisó qué y qué se cambió. |
