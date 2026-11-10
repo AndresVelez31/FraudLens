@@ -11,15 +11,16 @@ evaluar (etiquetas.csv.gz).
   # lo más rápido posible, con tope de 500 eventos/s, y 1 % de registros dañados para probar DLQ y cuarentena
   python -m producer.replayer --factor 0 --tasa-max 500 --limite 50000 --malos-pct 1
 
-  # demo en vivo con el histórico ya cargado: 2.000 pagos reales con un id nuevo, para que el sistema los procese
-  # como pagos que llegan hoy (sin --sufijo, Silver los descarta por repetidos: eso demuestra la idempotencia)
-  python -m producer.replayer --particion prueba --saltar 100000 --limite 2000 --factor 0 --tasa-max 50 --sufijo demo1
+  # demo en vivo con el histórico ya cargado: los últimos 2.000 pagos del dataset, después de sacarlos del sistema con
+  # `python -m batch.demo reservar --n 2000` (si no se reservan, Silver los descarta por repetidos: idempotencia)
+  python -m producer.replayer --particion prueba --ultimos 2000 --factor 0 --tasa-max 50
 
 Cada evento lleva ts_evento (hora "histórica": FECHA_BASE + TransactionDT) y ts_emision (hora real de envío). La
 latencia del sistema se mide con ts_emision; ts_evento es la que usan las reglas (ventanas de R1, promedio de R2).
 Al terminar imprime un resumen JSON (y lo guarda con --resumen) con enviados, errores, duración y rango de fechas.
 """
 import argparse
+import collections
 import csv
 import gzip
 import io
@@ -53,13 +54,10 @@ def abrir(origen):
     return io.TextIOWrapper(gzip.open(origen), encoding="utf-8")
 
 
-def a_evento(fila, sufijo=None):
-    """Convierte una fila de eventos.csv.gz al contrato del evento. Con `sufijo`, el id de la transacción cambia a
-    <id>-<sufijo>: el mismo pago real entra como uno nuevo (para la demo, cuando el histórico ya está cargado). Esos
-    pagos no tienen etiqueta, así que no cuentan en la medición del acierto (P7)."""
+def a_evento(fila):
     vacio = lambda v: v if v not in ("", None) else None  # noqa: E731
     return {
-        "id_transaccion": fila["id_transaccion"] + ("-" + sufijo if sufijo else ""),
+        "id_transaccion": fila["id_transaccion"],
         "ts_evento": iso(FECHA_BASE + timedelta(seconds=float(fila["transaction_dt"]))),
         "ts_emision": iso(datetime.now(timezone.utc)),
         "id_cliente": fila["id_cliente"],
@@ -71,6 +69,12 @@ def a_evento(fila, sufijo=None):
         "region": vacio(fila["region"]),
         "correo_dominio": vacio(fila["correo_dominio"]),
     }
+
+
+def filas_a_enviar(filas, particion, ultimos=0):
+    """Filas de la partición en orden; con `ultimos`, solo las últimas N (se leen todas y se guardan N en memoria)."""
+    elegidas = (f for f in filas if particion == "todo" or f["particion"] == particion)
+    return collections.deque(elegidas, maxlen=ultimos) if ultimos else elegidas
 
 
 def danar(evento, rnd):
@@ -99,7 +103,8 @@ def main():
     ap.add_argument("--tasa-max", type=float, default=500.0, help="tope de eventos por segundo")
     ap.add_argument("--malos-pct", type=float, default=0.0, help="porcentaje de registros dañados que se inyectan")
     ap.add_argument("--semilla", type=int, default=42)
-    ap.add_argument("--sufijo", help="se agrega al id de cada transacción para enviarla como un pago nuevo (demo)")
+    ap.add_argument("--ultimos", type=int, default=0,
+                    help="envía solo las últimas N filas de la partición (demo, junto con batch.demo reservar)")
     ap.add_argument("--bootstrap", default=os.environ.get("KAFKA_BOOTSTRAP_SERVERS", "localhost:9092"))
     ap.add_argument("--topic", default=os.environ.get("KAFKA_TOPIC", "transacciones"))
     ap.add_argument("--resumen", help="archivo donde se guarda el resumen JSON de la corrida")
@@ -116,9 +121,7 @@ def main():
     proximo_min = t_inicio
 
     try:
-        for fila in csv.DictReader(abrir(a.origen)):
-            if a.particion != "todo" and fila["particion"] != a.particion:
-                continue
+        for fila in filas_a_enviar(csv.DictReader(abrir(a.origen)), a.particion, a.ultimos):
             if saltadas < a.saltar:
                 saltadas += 1
                 continue
@@ -132,7 +135,7 @@ def main():
                 time.sleep(espera)
             proximo_min = time.monotonic() + intervalo_min
 
-            evento = a_evento(fila, a.sufijo)
+            evento = a_evento(fila)
             em.evento(evento)
             enviados += 1
             primero = primero or evento["ts_evento"]
@@ -152,7 +155,7 @@ def main():
     pendientes = em.cerrar()
     duracion = time.monotonic() - t_inicio
     resumen = {
-        "origen": a.origen, "particion": a.particion, "factor": a.factor, "tasa_max": a.tasa_max, "sufijo": a.sufijo,
+        "origen": a.origen, "particion": a.particion, "factor": a.factor, "tasa_max": a.tasa_max, "ultimos": a.ultimos,
         "enviados": enviados, "malos_inyectados": malos, "entregados_ok": em.ok, "errores_entrega": em.error,
         "pendientes": pendientes, "duracion_s": round(duracion, 1),
         "eventos_por_s": round(enviados / duracion, 1) if duracion else None,

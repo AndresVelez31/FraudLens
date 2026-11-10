@@ -33,8 +33,9 @@ def test_registros_danados_van_a_dlq_o_cuarentena():
     assert tipos == {"cuarentena", "ilegible"}
 
 
-def test_con_sufijo_el_pago_entra_como_uno_nuevo():
-    assert replayer.a_evento(FILA)["id_transaccion"] == "T1"
-    e = replayer.a_evento(FILA, "demo1")
-    assert e["id_transaccion"] == "T1-demo1"
-    assert e["id_cliente"] == "U1_315_10" and e["monto"] == 75.5   # el resto del pago es el mismo
+
+def test_ultimos_envia_solo_el_final_de_la_particion_en_orden():
+    filas = [dict(FILA, id_transaccion="T%d" % i, particion="prueba" if i % 2 else "entrenamiento") for i in range(10)]
+    assert [f["id_transaccion"] for f in replayer.filas_a_enviar(filas, "prueba", 2)] == ["T7", "T9"]
+    assert len(list(replayer.filas_a_enviar(filas, "prueba"))) == 5
+    assert len(list(replayer.filas_a_enviar(filas, "todo", 3))) == 3
