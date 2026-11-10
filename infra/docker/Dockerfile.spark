@@ -1,6 +1,7 @@
-# Imagen para el streaming, los jobs batch y los scripts: Spark 3.5.1 + Delta 3.1.0 + S3A + Kafka + JDBC.
+# Imagen para el streaming, los jobs batch y los scripts: Spark 3.5.1 + Delta 3.1.0 + S3A + Kafka + JDBC, y LightGBM
+# para la regla R4 (libgomp1 es la librería de OpenMP que necesita).
 FROM python:3.11-slim-bookworm
-RUN apt-get update && apt-get install -y --no-install-recommends openjdk-17-jre-headless curl ca-certificates procps \
+RUN apt-get update && apt-get install -y --no-install-recommends openjdk-17-jre-headless curl ca-certificates procps libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64 TZ=UTC PYTHONUNBUFFERED=1
 COPY infra/docker/requirements.txt /tmp/requirements.txt

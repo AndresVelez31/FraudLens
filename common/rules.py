@@ -1,4 +1,4 @@
-"""Reglas de fraude R1-R3 como funciones puras sobre DataFrames.
+"""Reglas de fraude R1-R4 como funciones puras sobre DataFrames (el puntaje de R4 se calcula en common/r4.py).
 
 Las usan dos programas distintos y por eso viven aquí:
   * streaming/job.py las aplica a cada micro-batch (R1 sobre ventanas con estado, R2 y R3 con join stream-static),
@@ -25,6 +25,7 @@ DIM_REGLA = [
     ("R1", "Ráfaga en ventana de 5 minutos", "Más de N transacciones o más de $X acumulados por cliente en 5 min"),
     ("R2", "Dispositivo nuevo y monto inusual", "Dispositivo nunca visto para el cliente y monto > k veces su promedio de 30 días"),
     ("R3", "Lista de riesgo", "Comercio o dispositivo en la versión vigente de la lista de riesgo"),
+    ("R4", "Modelo de riesgo", "Puntaje del modelo LightGBM sobre las variables del evento y la historia del cliente"),
 ]
 
 ALERTA_COLS = [
@@ -86,7 +87,7 @@ def r1_alertas(agregado, version):
 # --------------------------------------------------------------------------------------------------
 def _alerta_por_transaccion(df, regla, version, detalle_col):
     return _forma(
-        df.withColumn("id_alerta", _id(regla, "id_transaccion", *([] if regla == "R2" else ["tipo_lista"])))
+        df.withColumn("id_alerta", _id(regla, "id_transaccion", *(["tipo_lista"] if regla == "R3" else [])))
         .withColumn("regla", F.lit(regla))
         .withColumn("rule_version", F.lit(version))
         .withColumn("ventana_inicio", _nulo("timestamp"))
@@ -163,3 +164,13 @@ def r3_alertas(tx, lista, version):
     f = por_comercio.select(*cols).unionByName(por_dispositivo.select(*cols))
     detalle = F.to_json(F.struct(F.col("tipo_lista").alias("lista"), F.col("motivo")))
     return _alerta_por_transaccion(f, "R3", version, detalle)
+
+
+# --------------------------------------------------------------------------------------------------
+# R4: el puntaje del modelo supera el umbral (el puntaje lo calcula common/r4.py)
+# --------------------------------------------------------------------------------------------------
+def r4_alertas(puntuadas, umbral, version):
+    """`puntuadas`: transacciones del lote con su `puntaje`, ya filtradas a las que superan el umbral."""
+    detalle = F.to_json(F.struct(F.round("puntaje", 4).alias("puntaje"), F.lit(round(umbral, 4)).alias("umbral"),
+                                 F.lit("lightgbm_contrato").alias("modelo")))
+    return _alerta_por_transaccion(puntuadas, "R4", version, detalle)

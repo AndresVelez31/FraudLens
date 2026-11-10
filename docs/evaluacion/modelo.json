@@ -6,41 +6,64 @@
   },
   "modelos": {
     "contrato": {
-      "auc_roc": 0.8041,
-      "auc_pr": 0.1597,
-      "arboles": 203,
+      "auc_roc": 0.8061,
+      "auc_pr": 0.1601,
+      "arboles": 231,
       "mismo_presupuesto_que_reglas": {
         "alertadas": 5480,
-        "tp": 1128,
-        "fp": 4352,
-        "fn": 2936,
-        "precision": 0.2058,
-        "recall": 0.2776,
+        "tp": 1145,
+        "fp": 4335,
+        "fn": 2919,
+        "precision": 0.2089,
+        "recall": 0.2817,
         "alertas_por_mil": 46.4,
-        "monto_fraude_detectado_pct": 26.6
+        "monto_fraude_detectado_pct": 27.05
       },
       "misma_cobertura_que_reglas": {
-        "alertadas": 1431,
+        "alertadas": 1458,
         "tp": 409,
-        "fp": 1022,
+        "fp": 1049,
         "fn": 3655,
-        "precision": 0.2858,
+        "precision": 0.2805,
         "recall": 0.1006,
-        "alertas_por_mil": 12.12,
-        "monto_fraude_detectado_pct": 13.03
+        "alertas_por_mil": 12.34,
+        "monto_fraude_detectado_pct": 12.96
       },
       "variables": 17,
       "importancia_top10_pct": {
-        "tipo": 17.1,
-        "region": 14.6,
-        "monto": 12.8,
-        "disp_tx_previas": 12.1,
+        "tipo": 16.5,
+        "region": 14.8,
+        "monto": 12.7,
+        "disp_tx_previas": 12.0,
         "correo_dominio": 9.8,
-        "cli_seg_desde_anterior": 8.7,
-        "cli_monto_prom_30d": 6.0,
+        "cli_seg_desde_anterior": 8.5,
+        "cli_monto_prom_30d": 6.5,
         "cli_tx_previas": 4.5,
         "hora": 4.2,
-        "monto_vs_prom_30d": 2.6
+        "monto_vs_prom_30d": 3.0
+      },
+      "r4": {
+        "umbral": 0.155431,
+        "alertas_por_mil_objetivo": 35,
+        "variables": [
+          "monto",
+          "log_monto",
+          "tipo",
+          "region",
+          "correo_dominio",
+          "tiene_dispositivo",
+          "hora",
+          "dia_semana",
+          "cli_tx_5min",
+          "cli_tx_1h",
+          "cli_tx_24h",
+          "cli_tx_previas",
+          "cli_seg_desde_anterior",
+          "cli_monto_prom_30d",
+          "monto_vs_prom_30d",
+          "disp_nuevo_para_cliente",
+          "disp_tx_previas"
+        ]
       }
     },
     "vesta": {
@@ -86,5 +109,5 @@
     "transacciones": 118108,
     "tasa_base": 0.03441
   },
-  "duracion_s": 111.6
+  "duracion_s": 120.8
 }
