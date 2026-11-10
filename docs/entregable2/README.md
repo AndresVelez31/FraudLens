@@ -16,5 +16,5 @@
 
 ## Entrega final
 
-Repositorio: https://github.com/AndresVelez31/FraudLens. El PR final queda abierto hasta después de la sustentación
-(S16); los últimos ajustes del ensayo y el PDF definitivo de las slides se suben como commits a ese PR.
+Repositorio: https://github.com/AndresVelez31/FraudLens. Se entrega con un PR al repositorio del curso
+(asacrea/st1630-252#45) que enlaza este repositorio.
