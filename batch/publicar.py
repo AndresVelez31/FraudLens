@@ -45,6 +45,22 @@ def estado_en_glue(tabla_glue):
     return "ok"
 
 
+def columnas_glue(tabla_glue):
+    """Nombres de columna (en minúscula) que Glue tiene guardados, incluidas las de partición."""
+    sd = tabla_glue.get("StorageDescriptor") or {}
+    return {c["Name"].lower() for c in sd.get("Columns", []) + tabla_glue.get("PartitionKeys", [])}
+
+
+def esquemas_delta(spark):
+    """{tabla: columnas} de las tablas Delta de Gold que ya existen (para detectar entradas de Glue desactualizadas)."""
+    salida = {}
+    for t in TABLAS:
+        ruta = config.lake("gold", t)
+        if DeltaTable.isDeltaTable(spark, ruta):
+            salida[t] = {c.lower() for c in spark.read.format("delta").load(ruta).schema.fieldNames()}
+    return salida
+
+
 def _existe_delta(s3, uri):
     """True si en `uri` (s3://bucket/prefijo) ya hay un _delta_log, es decir, si la tabla Delta existe."""
     bucket, prefijo = uri.replace("s3://", "", 1).split("/", 1)
@@ -72,12 +88,14 @@ def _ejecutar_athena(athena, sql, workgroup, espera=1.0, max_espera_s=120):
         time.sleep(espera)
 
 
-def registrar_glue(s3=None, glue=None, athena=None):
+def registrar_glue(s3=None, glue=None, athena=None, esquemas=None):
     """Registra en Glue (vía Athena) las tablas Delta de Gold para que Athena y Power BI las lean.
 
     Por cada tabla:
       * si todavía no existe en S3 (el DAG aún no la ha creado), la salta y la registra en una corrida posterior;
       * si ya está bien registrada, no hace nada;
+      * si sus columnas en Glue no son las de la tabla Delta (`esquemas`, p. ej. tras agregar columnas a Gold),
+        la borra y la vuelve a crear: Athena se niega a leerla con INVALID_GLUE_SCHEMA;
       * si quedó una entrada rota de un intento fallido, la borra y la vuelve a crear;
       * si el registro falla, borra la entrada a medias, sigue con las demás y al final falla con la lista,
         para que Airflow reintente sin dejar el catálogo roto.
@@ -104,7 +122,13 @@ def registrar_glue(s3=None, glue=None, athena=None):
             resultado[t] = "pendiente (aún no existe en S3)"
             log.info("Glue: %s todavía no existe en S3; se registrará en una corrida posterior", t)
             continue
-        estado = estado_en_glue(_tabla_glue(glue, bd, t))
+        actual = _tabla_glue(glue, bd, t)
+        estado = estado_en_glue(actual)
+        if estado == "ok" and esquemas and t in esquemas and columnas_glue(actual) != set(esquemas[t]):
+            estado = "desactualizada"
+            glue.delete_table(DatabaseName=bd, Name=t)
+            log.warning("Glue: %s tenía columnas viejas (%s); se borró para recrearla con el esquema de Delta", t,
+                        ", ".join(sorted(set(esquemas[t]) ^ columnas_glue(actual))))
         if estado == "ok":
             resultado[t] = "ya registrada"
             continue
@@ -114,7 +138,7 @@ def registrar_glue(s3=None, glue=None, athena=None):
         ddl = "CREATE EXTERNAL TABLE IF NOT EXISTS %s.%s LOCATION '%s/' TBLPROPERTIES ('table_type'='DELTA')" % (bd, t, uri)
         st, motivo = _ejecutar_athena(athena, ddl, wg)
         if st == "SUCCEEDED" and estado_en_glue(_tabla_glue(glue, bd, t)) == "ok":
-            resultado[t] = "registrada" if estado == "falta" else "reparada"
+            resultado[t] = {"falta": "registrada", "rota": "reparada", "desactualizada": "actualizada"}[estado]
             log.info("Glue: tabla %s %s", t, resultado[t])
             continue
         # Falló: no dejar una entrada a medias que bloquee los reintentos.
@@ -162,7 +186,14 @@ def main():
         finally:
             spark.stop()
     elif a.paso == "glue":
-        registrar_glue()
+        esquemas = None
+        if not config.S3_ENDPOINT:
+            spark = get_spark("fraudlens-glue")
+            try:
+                esquemas = esquemas_delta(spark)
+            finally:
+                spark.stop()
+        registrar_glue(esquemas=esquemas)
     else:
         refrescar_metabase()
     return 0

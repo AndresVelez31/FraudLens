@@ -19,6 +19,7 @@ BD = "fraudlens"
 class AthenaFalsa:
     def __init__(self, glue, fallar=()):
         self.glue, self.fallar, self.consultas, self._ids = glue, set(fallar), {}, itertools.count()
+        self.columnas = [{"Name": "id", "Type": "string"}]
 
     def start_query_execution(self, QueryString, WorkGroup):
         tabla = QueryString.split("EXISTS %s." % BD)[1].split()[0]
@@ -27,7 +28,7 @@ class AthenaFalsa:
             self._crear(tabla, columnas=[])
             self.consultas[qid] = ("FAILED", "Delta Table DDL failed with an unexpected error.")
         else:
-            self._crear(tabla, columnas=[{"Name": "id", "Type": "string"}])
+            self._crear(tabla, columnas=self.columnas)
             self.consultas[qid] = ("SUCCEEDED", None)
         return {"QueryExecutionId": qid}
 
@@ -119,3 +120,16 @@ def test_en_aws_sin_configuracion_falla(aws, monkeypatch):
 def test_en_local_se_omite(monkeypatch):
     monkeypatch.setattr(config, "S3_ENDPOINT", "http://minio:9000")
     assert publicar.registrar_glue() == {}
+
+
+def test_recrea_la_entrada_si_gold_cambio_de_columnas(aws):
+    s3, glue = aws
+    crear_delta(s3, "fact_alertas")
+    athena = AthenaFalsa(glue)
+    publicar.registrar_glue(s3=s3, glue=glue, athena=athena)                      # Glue queda con ["id"]
+    athena.columnas = [{"Name": "id", "Type": "string"}, {"Name": "puntaje", "Type": "double"}]
+    res = publicar.registrar_glue(s3=s3, glue=glue, athena=athena, esquemas={"fact_alertas": {"id", "puntaje"}})
+    assert res["fact_alertas"] == "actualizada"
+    assert publicar.columnas_glue(glue.get_table(DatabaseName=BD, Name="fact_alertas")["Table"]) == {"id", "puntaje"}
+    res = publicar.registrar_glue(s3=s3, glue=glue, athena=athena, esquemas={"fact_alertas": {"id", "puntaje"}})
+    assert res["fact_alertas"] == "ya registrada"                                 # ya coincide: no se toca
