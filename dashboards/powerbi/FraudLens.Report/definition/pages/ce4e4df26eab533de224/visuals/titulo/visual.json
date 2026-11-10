@@ -38,7 +38,7 @@
               {
                 "textRuns": [
                   {
-                    "value": "Capa Gold en Amazon Athena · Datos de la prueba con tráfico en AWS (us-east-2)",
+                    "value": "Capa Gold en Amazon Athena · Transacciones reales de IEEE-CIS (Vesta) reproducidas en AWS (us-east-2)",
                     "textStyle": {
                       "fontSize": "11pt",
                       "color": "#94A3B8"

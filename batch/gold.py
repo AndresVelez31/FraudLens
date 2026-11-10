@@ -17,6 +17,7 @@ Tres relojes distintos, cada uno para lo suyo (necesario para reproducir datos h
 """
 import argparse
 import logging
+import os
 import sys
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -24,7 +25,7 @@ from datetime import datetime, timedelta, timezone
 from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 
-from common import config, rules, tables
+from common import config, lake, rules, tables
 from common.spark import get_spark
 
 log = logging.getLogger("fraudlens.gold")
@@ -194,18 +195,24 @@ def hechos(spark, dias):
     tx = silver.select(
         "id_transaccion", "id_cliente", "id_comercio", "id_dispositivo",
         id_tiempo("ts_evento").alias("id_tiempo"),
-        "ts_evento", "fecha", "monto", "tipo", F.lit(False).alias("es_sospechosa"),
+        "ts_evento", "fecha", "monto", "tipo", F.col("ciudad").alias("region"), F.lit(False).alias("es_sospechosa"),
+        # La realidad (contracargos / fraude confirmado) llega después y por otro camino: la llena `etiquetar`.
+        F.lit(None).cast("boolean").alias("es_fraude_real"), F.lit(None).cast("string").alias("particion_eval"),
         "source_system", "kafka_partition", "kafka_offset", F.col("ingest_ts").alias("ingest_ts"),
         F.lit(batch_id).alias("batch_id"),
     )
     _merge_o_crear(spark, tx, "fact_transacciones", "t.id_transaccion = s.id_transaccion AND t.fecha = s.fecha", "fecha")
 
-    # fact_alertas: una fila por (alerta, versión de reglas)
+    # fact_alertas: una fila por (alerta, versión de reglas). Fecha e id_tiempo son los del PAGO (como en
+    # fact_transacciones), no los de la alerta: al reproducir un histórico todas las alertas nacen hoy.
+    ts_pago = F.coalesce("ts_evento", "ventana_inicio")   # R1 no tiene una transacción propia: inicio de su ventana
     al = spark.read.format("delta").load(tables.ruta("silver_alertas")).select(
         "id_alerta", "rule_version", F.col("regla").alias("id_regla"), "id_transaccion", "id_cliente", "id_comercio",
         "ts_evento", "ts_alerta", "ventana_inicio", "ventana_fin", "n_tx", "monto_total",
+        F.get_json_object("detalle", "$.puntaje").cast("double").alias("puntaje"),
         (F.col("ts_alerta").cast("double") - F.col("ts_evento").cast("double")).alias("latencia_s"),
-        F.to_date("ts_alerta").alias("fecha"),
+        id_tiempo(ts_pago).alias("id_tiempo"), F.to_date(ts_pago).alias("fecha"),
+        F.lit(None).cast("boolean").alias("es_fraude_real"), F.lit(None).cast("string").alias("particion_eval"),
         F.lit("streaming").alias("origen"), "source_system", "kafka_partition", "kafka_offset", F.lit(batch_id).alias("batch_id"),
         F.col("ingest_ts"),
     )
@@ -214,7 +221,48 @@ def hechos(spark, dias):
         set_si_coincide={"n_tx": "s.n_tx", "monto_total": "s.monto_total", "ventana_fin": "s.ventana_fin"},
     )
     marcar_sospechosas(spark, dias if incremental else None)
+    etiquetar(spark, dias if incremental else None)
     log.info("hechos de Gold actualizados (batch %s)", batch_id)
+
+
+def _hay_archivo(uri):
+    if not uri:
+        return False
+    if uri.startswith(("s3a://", "s3://")):
+        return bool(lake.listar(uri))
+    return os.path.exists(uri)
+
+
+def etiquetar(spark, dias=None):
+    """Cruza Gold con la realidad: `es_fraude_real` y `particion_eval` desde ETIQUETAS_URI (id_transaccion, isFraud,
+    particion). Con IEEE-CIS es la etiqueta de Vesta; en un banco serían los contracargos confirmados, que llegan días
+    después. El streaming nunca la ve: solo sirve para medir precisión, cobertura y falsos positivos en el tablero.
+    Si el archivo no está, no hace nada. `dias`: solo lo que llegó en esos días (None = todo Gold)."""
+    uri = config.env("ETIQUETAS_URI", config.lake("raw", "ieee-cis", "preparado", "etiquetas.csv.gz"))
+    if not _hay_archivo(uri):
+        log.info("sin etiquetas de fraude real (%s): Gold queda sin es_fraude_real", uri or "ETIQUETAS_URI vacío")
+        return
+    et = spark.read.option("header", True).csv(uri).select(
+        "id_transaccion", (F.col("isFraud").cast("int") == 1).alias("es_fraude_real"),
+        F.col("particion").alias("particion_eval"))
+    tx = spark.read.format("delta").load(ruta("fact_transacciones"))
+    if dias is not None:
+        tx = llegadas(tx, dias)
+    pendientes = tx.where(F.col("es_fraude_real").isNull()).select("id_transaccion", "fecha").join(et, "id_transaccion")
+    (
+        DeltaTable.forPath(spark, ruta("fact_transacciones")).alias("t")
+        .merge(pendientes.alias("s"), "t.id_transaccion = s.id_transaccion AND t.fecha = s.fecha")
+        .whenMatchedUpdate(set={"es_fraude_real": "s.es_fraude_real", "particion_eval": "s.particion_eval"})
+        .execute()
+    )
+    (
+        DeltaTable.forPath(spark, ruta("fact_alertas")).alias("t")
+        .merge(et.alias("s"), "t.id_transaccion = s.id_transaccion")
+        .whenMatchedUpdate(condition="t.es_fraude_real IS NULL",
+                           set={"es_fraude_real": "s.es_fraude_real", "particion_eval": "s.particion_eval"})
+        .execute()
+    )
+    log.info("etiquetas de fraude real cruzadas con Gold (%s)", uri)
 
 
 def marcar_sospechosas(spark, dias=None):

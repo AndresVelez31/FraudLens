@@ -1,0 +1,147 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.3.0/schema.json",
+  "name": "p7_por_regla",
+  "position": {
+    "x": 40,
+    "y": 296,
+    "z": 5,
+    "height": 384,
+    "width": 1840,
+    "tabOrder": 5
+  },
+  "visual": {
+    "visualType": "tableEx",
+    "query": {
+      "queryState": {
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "dim_regla"
+                    }
+                  },
+                  "Property": "nombre"
+                }
+              },
+              "queryRef": "dim_regla.nombre",
+              "nativeQueryRef": "Regla",
+              "displayName": "Regla"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_alertas"
+                    }
+                  },
+                  "Property": "Alertas con etiqueta"
+                }
+              },
+              "queryRef": "fact_alertas.Alertas con etiqueta",
+              "nativeQueryRef": "Alertas",
+              "displayName": "Alertas"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_alertas"
+                    }
+                  },
+                  "Property": "Precisión de la regla"
+                }
+              },
+              "queryRef": "fact_alertas.Precisión de la regla",
+              "nativeQueryRef": "Precisión",
+              "displayName": "Precisión"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_alertas"
+                    }
+                  },
+                  "Property": "Puntaje promedio"
+                }
+              },
+              "queryRef": "fact_alertas.Puntaje promedio",
+              "nativeQueryRef": "Puntaje promedio (R4)",
+              "displayName": "Puntaje promedio (R4)"
+            }
+          ]
+        }
+      }
+    },
+    "drillFilterOtherVisuals": true,
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'P7 · Precisión de cada regla contra el fraude real (R2, R3 y R4)'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "objects": {
+      "values": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "12D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "columnHeaders": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "12D"
+                }
+              }
+            }
+          }
+        }
+      ],
+      "total": [
+        {
+          "properties": {
+            "fontSize": {
+              "expr": {
+                "Literal": {
+                  "Value": "12D"
+                }
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

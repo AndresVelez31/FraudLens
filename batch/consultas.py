@@ -1,9 +1,9 @@
-"""Ejecuta las consultas P4-P6 sobre Gold con Spark SQL (RF-11 a RF-13).
+"""Ejecuta las consultas P4-P7 sobre Gold con Spark SQL (RF-11 a RF-13).
 
 Usa los mismos archivos .sql que Amazon Athena (dashboards/athena/): se registran las tablas de Gold como vistas con
 los nombres del catálogo de Glue (fact_transacciones, dim_comercio, ...). Es el plan B si Athena no está disponible.
 
-  python -m batch.consultas p4|p5|p6|todas
+  python -m batch.consultas p4|p5|p6|p7|p7r|todas
 """
 import argparse
 import os
@@ -17,6 +17,8 @@ CONSULTAS = {
     "p4": "p4_tasa_fraude.sql",
     "p5": "p5_latencia_alertas.sql",
     "p6": "p6_top10_comercios.sql",
+    "p7": "p7_acierto.sql",
+    "p7r": "p7_acierto_por_regla.sql",
 }
 TABLAS_GOLD = ["fact_transacciones", "fact_alertas", "dim_cliente", "dim_comercio", "dim_dispositivo", "dim_tiempo", "dim_regla"]
 

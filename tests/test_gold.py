@@ -78,3 +78,40 @@ def test_hora_de_colombia_en_id_tiempo_y_dim_tiempo(spark, lake):
     assert dim[2026050922].hora == 22 and dim[2026050922].franja == "noche"
     assert str(dim[2026050922].fecha) == "2026-05-09" and dim[2026050922].zona_horaria == "America/Bogota"
     assert len(dim) == 24                                         # el 9 de mayo (hora local) completo
+
+
+def test_etiquetas_de_fraude_real_y_alertas_con_fecha_del_pago(spark, lake, monkeypatch):
+    mayo = datetime(2026, 5, 10, 12)
+    agregar(spark, [("F1", "C1", mayo, 100.0, AHORA), ("L1", "C2", mayo, 50.0, AHORA), ("S1", "C3", mayo, 9.0, AHORA)])
+    alerta = spark.createDataFrame(
+        [("a1", "R4", "ieee", "F1", "C1", "W", mayo, AHORA, 1, 100.0, '{"puntaje": 0.42, "umbral": 0.155}', AHORA),
+         ("a2", "R4", "ieee", "L1", "C2", "W", mayo, AHORA, 1, 50.0, '{"puntaje": 0.20, "umbral": 0.155}', AHORA)],
+        "id_alerta string, regla string, rule_version string, id_transaccion string, id_cliente string,"
+        " id_comercio string, ts_evento timestamp, ts_alerta timestamp, n_tx bigint, monto_total double,"
+        " detalle string, ingest_ts timestamp")
+    cols = spark.read.format("delta").load(tables.ruta("silver_alertas")).schema
+    for c in cols:
+        if c.name not in alerta.columns:
+            alerta = alerta.withColumn(c.name, F.lit(None).cast(c.dataType))
+    alerta.select([c.name for c in cols]).write.format("delta").mode("append").save(tables.ruta("silver_alertas"))
+    et = lake / "etiquetas.csv"
+    et.write_text("id_transaccion,isFraud,particion\nF1,1,prueba\nL1,0,prueba\nS1,1,entrenamiento\n")
+    monkeypatch.setenv("ETIQUETAS_URI", str(et))
+
+    gold.hechos(spark, dias=2)
+    tx = {r.id_transaccion: r for r in spark.read.format("delta").load(gold.ruta("fact_transacciones")).collect()}
+    assert (tx["F1"].es_sospechosa, tx["F1"].es_fraude_real) == (True, True)       # acierto
+    assert (tx["L1"].es_sospechosa, tx["L1"].es_fraude_real) == (True, False)      # falso positivo
+    assert (tx["S1"].es_sospechosa, tx["S1"].es_fraude_real) == (False, True)      # fraude no detectado
+    assert tx["F1"].particion_eval == "prueba" and tx["S1"].particion_eval == "entrenamiento"
+    al = {r.id_alerta: r for r in spark.read.format("delta").load(gold.ruta("fact_alertas")).collect()}
+    assert al["a1"].puntaje == 0.42 and al["a1"].es_fraude_real is True and al["a2"].es_fraude_real is False
+    assert al["a1"].particion_eval == "prueba"
+    assert str(al["a1"].fecha) == "2026-05-10" and al["a1"].id_tiempo == 2026051007   # del pago, en hora de Colombia
+
+
+def test_sin_archivo_de_etiquetas_no_falla(spark, lake, monkeypatch):
+    monkeypatch.setenv("ETIQUETAS_URI", str(lake / "no-existe.csv.gz"))
+    agregar(spark, [("A", "C1", datetime(2026, 5, 10, 12), 10.0, AHORA)])
+    gold.hechos(spark, dias=2)
+    assert spark.read.format("delta").load(gold.ruta("fact_transacciones")).collect()[0].es_fraude_real is None

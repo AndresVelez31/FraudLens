@@ -20,16 +20,16 @@
                 "Column": {
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "dim_comercio"
+                      "Entity": "fact_transacciones"
                     }
                   },
-                  "Property": "nombre"
+                  "Property": "region"
                 }
               },
-              "queryRef": "dim_comercio.nombre",
-              "nativeQueryRef": "Comercio",
-              "active": true,
-              "displayName": "Comercio"
+              "queryRef": "fact_transacciones.region",
+              "nativeQueryRef": "Región",
+              "displayName": "Región",
+              "active": true
             }
           ]
         },
@@ -128,7 +128,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'P6 · Top 10 comercios por monto sospechoso'"
+                  "Value": "'P6 · Top 10 regiones por monto sospechoso'"
                 }
               }
             }

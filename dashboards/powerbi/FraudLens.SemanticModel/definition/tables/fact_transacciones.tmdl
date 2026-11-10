@@ -22,10 +22,44 @@ table fact_transacciones
 		formatString: 0.00\ %;-0.00\ %;0.00\ %
 		lineageTag: 7c75d1e4-d2de-4d98-b266-ee450ff7434b
 
-	/// P6: monto sospechoso solo para los 10 comercios con más monto sospechoso (en empate pueden aparecer más de 10)
-	measure 'Monto sospechoso (top 10)' = IF( [Monto sospechoso] > 0 && RANKX( ALL( dim_comercio[nombre] ), [Monto sospechoso], , DESC ) <= 10, [Monto sospechoso] )
+	/// P6: monto sospechoso solo para las 10 regiones con más monto sospechoso (en empate pueden aparecer más de 10)
+	measure 'Monto sospechoso (top 10)' = IF( [Monto sospechoso] > 0 && RANKX( ALL( fact_transacciones[region] ), [Monto sospechoso], , DESC ) <= 10, [Monto sospechoso] )
 		formatString: #,0
 		lineageTag: 582b466b-9b03-4567-b5dc-e89d75273ff4
+
+	/// P7: transacciones con fraude confirmado (etiqueta de Vesta; en un banco, contracargos)
+	measure 'Fraudes reales' = CALCULATE([Transacciones], fact_transacciones[es_fraude_real] = TRUE())
+		formatString: #,0
+		lineageTag: 12209412-1a64-4fd4-bdd4-9cbe8e777247
+
+	measure '% fraude real' = DIVIDE([Fraudes reales], CALCULATE([Transacciones], NOT ISBLANK(fact_transacciones[es_fraude_real])))
+		formatString: 0.00\ %;-0.00\ %;0.00\ %
+		lineageTag: 92c42ec3-3561-4392-bf5f-5a794f610fe2
+
+	/// P7: alertas que sí eran fraude (verdaderos positivos)
+	measure Aciertos = CALCULATE([Transacciones], fact_transacciones[es_sospechosa] = TRUE(), fact_transacciones[es_fraude_real] = TRUE())
+		formatString: #,0
+		lineageTag: 66a5e9ed-eb28-453f-88b1-99926cd9250c
+
+	/// P7: alertas sobre pagos legítimos
+	measure 'Falsos positivos' = CALCULATE([Transacciones], fact_transacciones[es_sospechosa] = TRUE(), fact_transacciones[es_fraude_real] = FALSE())
+		formatString: #,0
+		lineageTag: 14648158-19a2-4e76-8d03-c56f978fa751
+
+	/// P7: de cada 100 alertas (con etiqueta), cuántas eran fraude
+	measure Precisión = DIVIDE([Aciertos], [Aciertos] + [Falsos positivos])
+		formatString: 0.00\ %;-0.00\ %;0.00\ %
+		lineageTag: 04a565b2-f60f-407c-8ce4-f1779eefd355
+
+	/// P7: de cada 100 fraudes reales, cuántos se marcaron
+	measure Cobertura = DIVIDE([Aciertos], [Fraudes reales])
+		formatString: 0.00\ %;-0.00\ %;0.00\ %
+		lineageTag: 17074606-2306-492c-a1de-eb8b218f0d64
+
+	/// P7: falsos positivos por cada 1.000 pagos legítimos
+	measure 'FP por 1.000 legítimas' = DIVIDE(1000 * [Falsos positivos], CALCULATE([Transacciones], fact_transacciones[es_fraude_real] = FALSE()))
+		formatString: 0.0
+		lineageTag: 297d23e5-9ddd-451a-a94a-2bb2f3fd189a
 
 	column id_transaccion
 		dataType: string
@@ -172,6 +206,31 @@ table fact_transacciones
 		annotation SummarizationSetBy = Automatic
 
 		annotation UnderlyingDateTimeDataType = Date
+
+	column region
+		dataType: string
+		lineageTag: 84b940d4-4570-41fa-bfa3-81cbc2a83a59
+		summarizeBy: none
+		sourceColumn: region
+
+		annotation SummarizationSetBy = Automatic
+
+	column es_fraude_real
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 8c1b9259-bc59-4e33-afb9-2491a7458cfb
+		summarizeBy: none
+		sourceColumn: es_fraude_real
+
+		annotation SummarizationSetBy = Automatic
+
+	column particion_eval
+		dataType: string
+		lineageTag: 3cec23c2-535d-4857-aeaf-4c184bee0c62
+		summarizeBy: none
+		sourceColumn: particion_eval
+
+		annotation SummarizationSetBy = Automatic
 
 	partition fact_transacciones = m
 		mode: import
