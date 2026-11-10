@@ -1,5 +1,6 @@
 """Gold con datos históricos (IEEE-CIS): incremental por llegada, perfil de R2 con el reloj de los datos y hora de
 Colombia. Corre en la imagen de Spark."""
+import json
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -121,3 +122,42 @@ def test_pago_sin_region_queda_como_sin_region(spark, lake):
     agregar(spark, [("N", "C1", datetime(2026, 5, 10, 12), 10.0, AHORA)])     # ciudad (addr1) vacía
     gold.hechos(spark, dias=2)
     assert spark.read.format("delta").load(gold.ruta("fact_transacciones")).collect()[0].region == "Sin región"
+
+
+def test_latencia_por_tramo_desde_bronze_y_no_desde_la_fecha_historica(spark, lake):
+    mayo = datetime(2026, 5, 10, 12)                                  # fecha histórica del pago (meses atrás)
+    emision = (AHORA - timedelta(seconds=100)).replace(microsecond=0)
+    kafka, lote, alerta_ts = emision + timedelta(seconds=1), emision + timedelta(seconds=31), emision + timedelta(seconds=41)
+    agregar(spark, [("F1", "C1", mayo, 100.0, lote)])
+    valor = json.dumps({"id_transaccion": "F1", "ts_emision": emision.isoformat(timespec="milliseconds") + "Z"})
+    br = spark.createDataFrame([("F1", valor, kafka, lote)],
+                               "id_transaccion string, value string, kafka_timestamp timestamp, ingest_ts timestamp")
+    cols = spark.read.format("delta").load(tables.ruta("bronze_transacciones")).schema
+    for c in cols:
+        if c.name not in br.columns:
+            br = br.withColumn(c.name, F.lit(None).cast(c.dataType))
+    br.select([c.name for c in cols]).write.format("delta").mode("append").save(tables.ruta("bronze_transacciones"))
+    alerta = spark.createDataFrame(
+        [("a1", "R4", "ieee", "F1", "C1", "W", mayo, alerta_ts, 1, 100.0, '{"puntaje": 0.4}', lote)],
+        "id_alerta string, regla string, rule_version string, id_transaccion string, id_cliente string,"
+        " id_comercio string, ts_evento timestamp, ts_alerta timestamp, n_tx bigint, monto_total double,"
+        " detalle string, ingest_ts timestamp")
+    cols = spark.read.format("delta").load(tables.ruta("silver_alertas")).schema
+    for c in cols:
+        if c.name not in alerta.columns:
+            alerta = alerta.withColumn(c.name, F.lit(None).cast(c.dataType))
+    alerta.select([c.name for c in cols]).write.format("delta").mode("append").save(tables.ruta("silver_alertas"))
+
+    gold.hechos(spark, dias=2)
+    a = spark.read.format("delta").load(gold.ruta("fact_alertas")).collect()[0]
+    assert (a.latencia_s, a.lat_envio_s, a.lat_cola_s, a.lat_reglas_s) == (41.0, 1.0, 30.0, 10.0)
+
+
+def test_gold_viejo_sin_columnas_de_latencia_se_actualiza(spark, lake):
+    agregar(spark, [("A", "C1", datetime(2026, 5, 10, 12), 10.0, AHORA)])
+    gold.hechos(spark, dias=2)
+    ruta = gold.ruta("fact_alertas")
+    viejo = spark.read.format("delta").load(ruta).drop(*gold.COLUMNAS_LATENCIA)   # como estaba antes de D4
+    viejo.write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(ruta)
+    gold.hechos(spark, dias=2)
+    assert set(gold.COLUMNAS_LATENCIA) <= set(spark.read.format("delta").load(ruta).columns)

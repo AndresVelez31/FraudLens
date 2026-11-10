@@ -26,6 +26,21 @@ table fact_alertas
 		formatString: 0.000
 		lineageTag: 9240d8e0-ab82-42e4-8b27-4c854478bd25
 
+	/// D4: emisión -> Kafka
+	measure 'Envío prom. (s)' = AVERAGE(fact_alertas[lat_envio_s])
+		formatString: 0.0
+		lineageTag: 03e9bcd5-b664-40f6-81ab-d0eaf9c3f7ec
+
+	/// D4: espera en Kafka hasta el lote del streaming
+	measure 'Cola prom. (s)' = AVERAGE(fact_alertas[lat_cola_s])
+		formatString: 0.0
+		lineageTag: 87a10c16-3d1a-48be-98a7-624af6581795
+
+	/// D4: lote del streaming -> alerta (Bronze, Silver, reglas)
+	measure 'Reglas prom. (s)' = AVERAGE(fact_alertas[lat_reglas_s])
+		formatString: 0.0
+		lineageTag: 78def5a1-0d5d-485c-b57d-1b71b4b4fb82
+
 	column id_alerta
 		dataType: string
 		lineageTag: ea8ca064-3f31-4e9f-be40-bf9282e56487
@@ -263,6 +278,42 @@ table fact_alertas
 		lineageTag: 565a21dd-0dea-42c1-827e-9595ecbb432d
 		summarizeBy: none
 		sourceColumn: particion_eval
+
+		annotation SummarizationSetBy = Automatic
+
+	column ts_emision
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: f64cc41b-ef2c-4f39-a21e-24dc04a0fc6e
+		summarizeBy: none
+		sourceColumn: ts_emision
+
+		annotation SummarizationSetBy = Automatic
+
+	column lat_envio_s
+		dataType: double
+		formatString: 0.000
+		lineageTag: b4c767ba-8157-4558-ac32-f0906191a86a
+		summarizeBy: none
+		sourceColumn: lat_envio_s
+
+		annotation SummarizationSetBy = Automatic
+
+	column lat_cola_s
+		dataType: double
+		formatString: 0.000
+		lineageTag: 09d60135-0571-4213-8579-225e9cd09e23
+		summarizeBy: none
+		sourceColumn: lat_cola_s
+
+		annotation SummarizationSetBy = Automatic
+
+	column lat_reglas_s
+		dataType: double
+		formatString: 0.000
+		lineageTag: 549d750a-ba0e-4908-a087-8d19c2decbb2
+		summarizeBy: none
+		sourceColumn: lat_reglas_s
 
 		annotation SummarizationSetBy = Automatic
 

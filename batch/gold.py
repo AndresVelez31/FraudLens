@@ -182,10 +182,20 @@ def dimensiones(spark, dias):
 
 
 # ---------------------------------------------------------------- hechos
+def _agregar_columnas(spark, df, nombre):
+    """Agrega a la tabla Gold las columnas nuevas de `df` (evolución de esquema explícita, antes del MERGE)."""
+    actuales = {c.name.lower() for c in spark.read.format("delta").load(ruta(nombre)).schema}
+    nuevas = ["`%s` %s" % (c.name, c.dataType.simpleString()) for c in df.schema if c.name.lower() not in actuales]
+    if nuevas:
+        spark.sql("ALTER TABLE delta.`%s` ADD COLUMNS (%s)" % (ruta(nombre), ", ".join(nuevas)))
+        log.info("%s: columnas nuevas %s", nombre, ", ".join(nuevas))
+
+
 def _merge_o_crear(spark, df, nombre, condicion, particion=None, set_si_coincide=None):
     if not existe(spark, nombre):
         escribir(spark, df, nombre, particion)
         return
+    _agregar_columnas(spark, df, nombre)
     m = DeltaTable.forPath(spark, ruta(nombre)).alias("t").merge(df.alias("s"), condicion)
     if set_si_coincide:
         m = m.whenMatchedUpdate(set=set_si_coincide)
@@ -214,23 +224,63 @@ def hechos(spark, dias):
     # fact_alertas: una fila por (alerta, versión de reglas). Fecha e id_tiempo son los del PAGO (como en
     # fact_transacciones), no los de la alerta: al reproducir un histórico todas las alertas nacen hoy.
     ts_pago = F.coalesce("ts_evento", "ventana_inicio")   # R1 no tiene una transacción propia: inicio de su ventana
-    al = spark.read.format("delta").load(tables.ruta("silver_alertas")).select(
+    alertas = spark.read.format("delta").load(tables.ruta("silver_alertas"))
+    if incremental:
+        alertas = llegadas(alertas, dias)
+    al = alertas.join(tiempos_de_llegada(spark, dias if incremental else None), "id_transaccion", "left").select(
         "id_alerta", "rule_version", F.col("regla").alias("id_regla"), "id_transaccion", "id_cliente", "id_comercio",
         "ts_evento", "ts_alerta", "ventana_inicio", "ventana_fin", "n_tx", "monto_total",
         F.get_json_object("detalle", "$.puntaje").cast("double").alias("puntaje"),
-        (F.col("ts_alerta").cast("double") - F.col("ts_evento").cast("double")).alias("latencia_s"),
-        id_tiempo(ts_pago).alias("id_tiempo"), F.to_date(ts_pago).alias("fecha"),
+        *latencias(), id_tiempo(ts_pago).alias("id_tiempo"), F.to_date(ts_pago).alias("fecha"),
         F.lit(None).cast("boolean").alias("es_fraude_real"), F.lit(None).cast("string").alias("particion_eval"),
         F.lit("streaming").alias("origen"), "source_system", "kafka_partition", "kafka_offset", F.lit(batch_id).alias("batch_id"),
         F.col("ingest_ts"),
     )
     _merge_o_crear(
         spark, al, "fact_alertas", "t.id_alerta = s.id_alerta AND t.rule_version = s.rule_version", "fecha",
-        set_si_coincide={"n_tx": "s.n_tx", "monto_total": "s.monto_total", "ventana_fin": "s.ventana_fin"},
+        set_si_coincide=dict({"n_tx": "s.n_tx", "monto_total": "s.monto_total", "ventana_fin": "s.ventana_fin"},
+                             **{c: "s." + c for c in COLUMNAS_LATENCIA}),
     )
     marcar_sospechosas(spark, dias if incremental else None)
     etiquetar(spark, dias if incremental else None)
     log.info("hechos de Gold actualizados (batch %s)", batch_id)
+
+
+# ---------------------------------------------------------------- latencia por tramo (D4)
+# Cada pago pasa por: emisión (ts_emision, en el JSON) -> Kafka (kafka_timestamp) -> lote del streaming (ingest_ts de
+# Bronze) -> alerta (ts_alerta). Todo eso ya está en Bronze, así que la latencia se mide sin tocar el streaming.
+#   envío  = Kafka - emisión          (red y productor)
+#   cola   = lote - Kafka             (espera en Kafka hasta que el streaming toma el mensaje; crece si hay atraso)
+#   reglas = alerta - lote            (Bronze, Silver, R2/R3/R4 y escritura de la alerta)
+#   total  = alerta - emisión (o - Kafka si el evento no trae ts_emision)
+# Al reproducir un histórico, ts_evento es de meses atrás: por eso la latencia NO se mide contra ts_evento, salvo para
+# eventos sin rastro en Bronze (R1 marca ventanas, no transacciones) y solo si la diferencia es de menos de un día.
+COLUMNAS_LATENCIA = ["ts_emision", "latencia_s", "lat_envio_s", "lat_cola_s", "lat_reglas_s"]
+
+
+def tiempos_de_llegada(spark, dias=None):
+    """Por transacción: emisión, llegada a Kafka y entrada al streaming (la primera vez, si se reenvió)."""
+    br = spark.read.format("delta").load(tables.ruta("bronze_transacciones")).where(F.col("id_transaccion").isNotNull())
+    if dias is not None:
+        br = br.where(F.col("ingest_ts") >= F.lit(corte_ingesta(dias + 1)))
+    return br.groupBy("id_transaccion").agg(
+        F.min(F.to_timestamp(F.get_json_object("value", "$.ts_emision"))).alias("ts_emision"),
+        F.min("kafka_timestamp").alias("ts_kafka"), F.min("ingest_ts").alias("ts_lote"))
+
+
+def _seg(a, b):
+    return F.col(a).cast("double") - F.col(b).cast("double")
+
+
+def latencias():
+    origen = F.coalesce(F.col("ts_emision"), F.col("ts_kafka"))
+    contra_evento = _seg("ts_alerta", "ts_evento")
+    total = F.when(origen.isNotNull(), F.col("ts_alerta").cast("double") - origen.cast("double")).when(
+        contra_evento < 86400, contra_evento)
+    return [F.col("ts_emision"), F.round(total, 3).alias("latencia_s"),
+            F.round(_seg("ts_kafka", "ts_emision"), 3).alias("lat_envio_s"),
+            F.round(_seg("ts_lote", "ts_kafka"), 3).alias("lat_cola_s"),
+            F.round(_seg("ts_alerta", "ts_lote"), 3).alias("lat_reglas_s")]
 
 
 def _hay_archivo(uri):
