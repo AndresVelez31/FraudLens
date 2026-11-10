@@ -17,13 +17,18 @@ están medidas sobre la partición de prueba (el 20 % final por tiempo), salvo q
 | Costo | Carga completa ≈ USD 1,20 de EC2; cada consulta de Athena lee < 6 MB y tarda ~3 s |
 | Modelo (AUC) | R4 con 17 variables del contrato 0,806; con las columnas de Vesta 0,908; 1.er lugar Kaggle 0,946 |
 
+## Formato de la sustentación (guía del curso)
+25 minutos: **10 min de presentación** (15 slides, pasarse de 10 min baja la nota de presentación), **8 min de demo en
+vivo** y **7 min de preguntas** dirigidas a un integrante sin que los otros intervengan, a propósito sobre partes que
+no implementó. Pesos: defensa individual 40 %, demo 25 %, reflexión E1 frente a E2 20 %, presentación 15 %.
+
 ## Antes de la sustentación (checklist del equipo)
-- [ ] Cada integrante vio el deck completo con las notas del orador y ensayó su parte (simulacro cronometrado, ≤ 15 min).
+- [ ] PR final **abierto** en GitHub antes de las 11:59 p. m. del día anterior a S16.
+- [ ] Ensayo obligatorio el día anterior: demo completa en AWS con cronómetro, siguiendo `docs/entregable2/demo.md`.
+- [ ] Simulacro de la presentación en ≤ 10 min, con las notas del orador del deck.
 - [ ] Todos pueden explicar el diagrama `arquitectura.png` de izquierda a derecha, paso por paso (1 a 11).
+- [ ] Todos pueden contar qué cambió frente al E1 y por qué (`cambios_frente_e1.md`): es el 20 % de reflexión.
 - [ ] Power BI abre sin conexión (modo Import) y muestra la página «Acierto contra la realidad» en la partición de prueba.
-- [ ] Si hay demo en vivo: encender las dos EC2 a mano (se apagan a las 23:00), revisar `docker compose ps` y avisar que
-      cada alerta manda un correo (el resumen agrupa por lote).
-- [ ] Se completó la última fila de `docs/bitacora_ia.md` (quién revisó qué). Sin bitácora: −10 %.
 - [ ] Se verificó que `.env` y `data/` **no** están en el repositorio.
 
 ## Preguntas probables y respuesta corta
@@ -120,6 +125,63 @@ La causa: R4 relee desde Silver en S3 la historia del cliente en cada lote. El a
 
 **¿Qué más queda pendiente?** Retroalimentación del analista para reentrenar, probar TabPFN, una prueba de carga a
 5.000 pagos por segundo, y que el replayer descargue el archivo antes de enviar (para no caerse en cargas largas).
+
+### Preguntas que la guía del curso anuncia
+**¿Por qué Kafka y no Kinesis?** Kinesis y MSK no están en el plan gratuito. Kafka da lo que el diseño necesita:
+réplica 3 con `min.insync.replicas=2`, productor idempotente con `acks=all`, orden por cliente gracias a la clave
+`id_cliente` y relectura desde un offset. Se migra a MSK cambiando solo la dirección de los brokers.
+
+**¿Por qué Spark Structured Streaming y no Flink?** Un solo motor para streaming y batch (Bronze, Silver y Gold usan el
+mismo código de `common/`), escritura nativa a Delta Lake con MERGE y micro-lotes de 5 s, suficientes para una meta de
+minutos. Flink tendría menos latencia por evento y estado propio, que es justo lo que falta para la latencia (ver
+«¿Cumplen la latencia?»).
+
+**Si el volumen se multiplica por 100, ¿qué cambian primero?** Hoy son ~50 pagos/s; ×100 son 5.000/s, la meta del
+RNF-01. En orden:
+1. La historia del cliente para R4 pasa de leerse en Silver a una tabla de estado (DynamoDB o el estado de Spark): hoy es
+   el cuello de botella, y con más datos empeora.
+2. Spark sale de una EC2 a un clúster (EMR o varias máquinas). Escala bien porque Kafka está particionado por cliente.
+3. Kafka a MSK y más particiones; la clave `id_cliente` mantiene el orden por cliente al repartir.
+4. Lo que ya escala sin cambios: S3, DynamoDB en modo bajo demanda, Lambda, Athena y Gold incremental por llegada.
+
+**¿Cómo garantizan que un evento no se procese dos veces si Spark falla a mitad?** Checkpoint en S3 más escrituras
+idempotentes en cada destino. En el código:
+* `streaming/job.py:266`: `foreachBatch` con su checkpoint.
+* `common/tables.py:74`: `escribir_una_vez`, con `txnAppId` y `txnVersion` para Bronze y cuarentena.
+* `common/alerts.py:167`: `merge_silver`, el MERGE de alertas con `con_reintentos` (línea 154).
+* `common/alerts.py:57`: `put_item` con `attribute_not_exists(id_alerta)`.
+
+**¿Cuál es la posición CAP del componente más crítico y qué sacrificaron?** Kafka, CP: con
+`min.insync.replicas=2`, si caen 2 de los 3 brokers el productor deja de escribir. Se sacrifica disponibilidad para
+no perder pagos. DynamoDB es AP en las lecturas de la API (eventualmente consistentes): se acepta que una alerta tarde
+un instante en verse.
+
+**¿Qué pasa si el broker cae? Muéstrenlo en el código.**
+* `docker-compose.yml:62`: `KAFKA_MIN_INSYNC_REPLICAS: 2`.
+* `docker-compose.yml:119`: topic con `--replication-factor 3`.
+* `producer/producer.py:136-137`: `enable.idempotence` y `acks=all`.
+Con un broker caído se sigue escribiendo; con dos, el productor espera y reintenta sin perder.
+
+**¿Por qué la clave de partición de DynamoDB es `id_alerta` y no `id_cliente`?** `id_alerta` es determinista (hash de
+regla, transacción y versión). Así la escritura condicional rechaza la misma alerta dos veces, y la carga se reparte
+parejo entre particiones. Con `id_cliente` como clave, un cliente con muchas alertas sería una partición caliente y no
+habría forma de impedir el duplicado. Las consultas por cliente y por regla usan los índices `por_cliente` y
+`por_regla` (`id_cliente` o `regla` con `ts_alerta` como orden).
+
+**¿Y la clave de Kafka?** `id_cliente`: todos los pagos de un cliente caen en la misma partición y en orden, que es lo
+que necesitan la ventana de R1 y la historia de R2 y R4.
+
+**¿Cuál es la transformación no trivial en Spark?**
+* Join stream-static de cada micro-lote con el perfil del cliente y los dispositivos ya vistos (R2,
+  `common/rules.py:111`) y con la lista de riesgo (R3).
+* Agregaciones por cliente para las 17 variables de R4.
+* Ventana deslizante de 5 min con watermark para R1 (`streaming/job.py:275`; el código sigue, está apagada por
+  configuración).
+* En Gold: esquema en estrella, `dim_cliente` como SCD2 y joins con la etiqueta de fraude para medir.
+
+## Demo en vivo
+Guion de 8 minutos, comandos y qué hacer si algo falla: `docs/entregable2/demo.md`. Todo se maneja con
+`bash scripts/demo_aws.sh <paso>` desde el portátil.
 
 ## Lecciones de operar el sistema de verdad
 * Un correo por alerta inunda el buzón → resumen por lote.
