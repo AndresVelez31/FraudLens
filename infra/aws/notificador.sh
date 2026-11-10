@@ -23,6 +23,7 @@ VENTANA_S="${VENTANA_S:-300}"
 RAIZ="$(cd "$(dirname "$0")/../.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+TMPW="$(cd "$TMP" && (pwd -W 2>/dev/null || pwd))"   # el AWS CLI de Windows no lee /tmp de Git Bash
 aws() { command aws --region "$REGION" "$@"; }
 
 if [ "${1:-}" = "--forzar-error" ]; then
@@ -55,7 +56,7 @@ cat > "$TMP/confianza.json" <<'JSON'
   "Action": "sts:AssumeRole"}]}
 JSON
 if ! aws iam get-role --role-name "$ROL" >/dev/null 2>&1; then
-  aws iam create-role --role-name "$ROL" --assume-role-policy-document "file://$TMP/confianza.json" \
+  aws iam create-role --role-name "$ROL" --assume-role-policy-document "file://$TMPW/confianza.json" \
     --description "FraudLens: Lambda notificadora (D3)" >/dev/null
 fi
 aws iam attach-role-policy --role-name "$ROL" \
@@ -65,7 +66,7 @@ cat > "$TMP/permisos.json" <<JSON
   {"Effect": "Allow", "Action": "sns:Publish", "Resource": "$TOPICO_ARN"},
   {"Effect": "Allow", "Action": "sqs:SendMessage", "Resource": "$COLA_ARN"}]}
 JSON
-aws iam put-role-policy --role-name "$ROL" --policy-name sns-y-cola-de-fallos --policy-document "file://$TMP/permisos.json"
+aws iam put-role-policy --role-name "$ROL" --policy-name sns-y-cola-de-fallos --policy-document "file://$TMPW/permisos.json"
 ROL_ARN="$(aws iam get-role --role-name "$ROL" --query Role.Arn --output text)"
 
 echo "4) Paquete y función: $FUNCION"
@@ -77,7 +78,7 @@ with zipfile.ZipFile(os.path.join(d, "paquete.zip"), "w", zipfile.ZIP_DEFLATED) 
     for f in ("lambda_function.py", "resumen.py"):
         z.write(os.path.join(d, f), f)
 PY
-ZIP="fileb://$(cd "$TMP" && (pwd -W 2>/dev/null || pwd))/paquete.zip"
+ZIP="fileb://$TMPW/paquete.zip"
 VARS="Variables={SNS_TOPIC_ARN=$TOPICO_ARN,DYNAMODB_TABLE=$TABLA,FORZAR_ERROR=0}"
 if aws lambda get-function --function-name "$FUNCION" >/dev/null 2>&1; then
   aws lambda update-function-code --function-name "$FUNCION" --zip-file "$ZIP" --query LastUpdateStatus --output text
@@ -102,7 +103,7 @@ cat > "$TMP/filtro.json" <<'JSON'
 JSON
 COMUNES=(--batch-size 1000 --maximum-batching-window-in-seconds "$VENTANA_S" --maximum-retry-attempts 2
          --bisect-batch-on-function-error --maximum-record-age-in-seconds 3600
-         --destination-config "OnFailure={Destination=$COLA_ARN}" --filter-criteria "file://$(cd "$TMP" && (pwd -W 2>/dev/null || pwd))/filtro.json")
+         --destination-config "OnFailure={Destination=$COLA_ARN}" --filter-criteria "file://$TMPW/filtro.json")
 if [ "$MAPEO" = "None" ] || [ -z "$MAPEO" ]; then
   aws lambda create-event-source-mapping --function-name "$FUNCION" --event-source-arn "$STREAM" \
     --starting-position LATEST "${COMUNES[@]}" --query State --output text
