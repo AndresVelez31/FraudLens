@@ -128,3 +128,17 @@ def test_eventos_de_ieee_pasan_la_validacion(spark):
     e = evento(1, tipo="C", id_dispositivo=None, id_comercio="C", ciudad="R315")
     c = clasificar(raw(spark, [json.dumps(e)])).collect()[0]
     assert (c.ilegible, c.motivo) == (False, None)
+
+
+def test_reglas_activas_desde_el_entorno(monkeypatch):
+    import importlib
+
+    from common import config
+
+    monkeypatch.setenv("REGLAS_ACTIVAS", "r2, R3,R4")
+    c = importlib.reload(config)
+    try:
+        assert not c.regla_activa("R1") and c.regla_activa("R2") and c.regla_activa("r4")
+    finally:
+        monkeypatch.delenv("REGLAS_ACTIVAS")
+        importlib.reload(config)

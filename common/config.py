@@ -30,6 +30,14 @@ KAFKA_DLQ_TOPIC = env("KAFKA_DLQ_TOPIC", "transacciones_dlq")
 # Versión de reglas con la que corre el streaming (RF-16: se puede reprocesar con otra).
 RULE_VERSION = env("RULE_VERSION", "v1")
 
+# Reglas que corren en el streaming. Con IEEE-CIS se recomienda R2,R3,R4: R1 (ráfaga) casi no acierta con datos
+# reales y genera la mayoría de los falsos positivos (docs/evaluacion/README.md, F3).
+REGLAS_ACTIVAS = frozenset(r.strip().upper() for r in env("REGLAS_ACTIVAS", "R1,R2,R3,R4").split(",") if r.strip())
+
+
+def regla_activa(regla):
+    return regla.upper() in REGLAS_ACTIVAS
+
 SOURCE_SYSTEM = "fraudlens-app"
 
 
