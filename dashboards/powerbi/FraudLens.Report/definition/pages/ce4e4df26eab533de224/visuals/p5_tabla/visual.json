@@ -42,7 +42,8 @@
                 }
               },
               "queryRef": "fact_alertas.Alertas",
-              "nativeQueryRef": "Alertas"
+              "nativeQueryRef": "Alertas",
+              "displayName": "Alertas"
             },
             {
               "field": {
@@ -56,7 +57,8 @@
                 }
               },
               "queryRef": "fact_alertas.Latencia promedio (s)",
-              "nativeQueryRef": "Latencia promedio (s)"
+              "nativeQueryRef": "Latencia promedio (s)",
+              "displayName": "Promedio (s)"
             },
             {
               "field": {
@@ -70,7 +72,8 @@
                 }
               },
               "queryRef": "fact_alertas.Latencia P95 (s)",
-              "nativeQueryRef": "Latencia P95 (s)"
+              "nativeQueryRef": "Latencia P95 (s)",
+              "displayName": "P95 (s)"
             },
             {
               "field": {
@@ -84,7 +87,8 @@
                 }
               },
               "queryRef": "fact_alertas.Envío prom. (s)",
-              "nativeQueryRef": "Envío prom. (s)"
+              "nativeQueryRef": "Envío prom. (s)",
+              "displayName": "Envío (s)"
             },
             {
               "field": {
@@ -98,7 +102,8 @@
                 }
               },
               "queryRef": "fact_alertas.Cola prom. (s)",
-              "nativeQueryRef": "Cola prom. (s)"
+              "nativeQueryRef": "Cola prom. (s)",
+              "displayName": "Cola (s)"
             },
             {
               "field": {
@@ -112,7 +117,8 @@
                 }
               },
               "queryRef": "fact_alertas.Reglas prom. (s)",
-              "nativeQueryRef": "Reglas prom. (s)"
+              "nativeQueryRef": "Reglas prom. (s)",
+              "displayName": "Procesamiento (s)"
             }
           ]
         }
@@ -150,7 +156,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'P5 · Alertas y latencia por regla (desde que se emite el pago; tramos: envío, cola, reglas)'"
+                  "Value": "'P5 · Alertas y latencia por regla, desde que se emite el pago (segundos)'"
                 }
               }
             }
@@ -195,6 +201,106 @@
                 }
               }
             }
+          }
+        }
+      ],
+      "columnWidth": [
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "250D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "dim_regla.nombre"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "70D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "fact_alertas.Alertas"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "95D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "fact_alertas.Latencia promedio (s)"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "75D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "fact_alertas.Latencia P95 (s)"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "75D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "fact_alertas.Envío prom. (s)"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "75D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "fact_alertas.Cola prom. (s)"
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "expr": {
+                "Literal": {
+                  "Value": "120D"
+                }
+              }
+            }
+          },
+          "selector": {
+            "metadata": "fact_alertas.Reglas prom. (s)"
           }
         }
       ]
