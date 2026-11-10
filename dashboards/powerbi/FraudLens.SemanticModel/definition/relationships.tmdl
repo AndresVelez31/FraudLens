@@ -87,3 +87,7 @@ relationship AutoDetected_602128a2-2488-415b-b5e8-a5bb0af0c9a1
 	fromColumn: fact_alertas.id_regla
 	toColumn: dim_regla.id_regla
 
+relationship 720a02ae-b472-4748-b08f-95354ade20e7
+	fromColumn: fact_alertas.id_tiempo
+	toColumn: dim_tiempo.id_tiempo
+

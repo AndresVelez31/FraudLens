@@ -39,14 +39,15 @@
                 "Column": {
                   "Expression": {
                     "SourceRef": {
-                      "Entity": "dim_comercio"
+                      "Entity": "fact_transacciones"
                     }
                   },
-                  "Property": "ciudad"
+                  "Property": "region"
                 }
               },
-              "queryRef": "dim_comercio.ciudad",
-              "nativeQueryRef": "ciudad",
+              "queryRef": "fact_transacciones.region",
+              "nativeQueryRef": "Región",
+              "displayName": "Región",
               "active": true
             }
           ]
@@ -248,7 +249,7 @@
             "text": {
               "expr": {
                 "Literal": {
-                  "Value": "'P4 · Tasa de fraude por ciudad del comercio y franja horaria'"
+                  "Value": "'P4 · Tasa de alertas por región del pago y franja horaria (hora de Colombia)'"
                 }
               }
             }

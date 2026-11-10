@@ -18,6 +18,7 @@ from datetime import date, timedelta
 from delta.tables import DeltaTable
 from pyspark.sql import functions as F
 
+from batch import gold
 from common import config, rules, tables
 from common.spark import get_spark
 
@@ -51,7 +52,10 @@ def escribir_gold(spark, alertas, batch_id):
     df = alertas.select(
         "id_alerta", "rule_version", F.col("regla").alias("id_regla"), "id_transaccion", "id_cliente", "id_comercio",
         "ts_evento", F.current_timestamp().alias("ts_alerta"), "ventana_inicio", "ventana_fin", "n_tx", "monto_total",
-        F.lit(None).cast("double").alias("latencia_s"), F.to_date("ts_evento").alias("fecha"),
+        F.get_json_object("detalle", "$.puntaje").cast("double").alias("puntaje"),
+        F.lit(None).cast("double").alias("latencia_s"), gold.id_tiempo(F.col("ts_evento")).alias("id_tiempo"),
+        F.to_date("ts_evento").alias("fecha"), F.lit(None).cast("boolean").alias("es_fraude_real"),
+        F.lit(None).cast("string").alias("particion_eval"),
         F.lit("reproceso").alias("origen"), F.lit(config.SOURCE_SYSTEM).alias("source_system"),
         "kafka_partition", "kafka_offset", F.lit(batch_id).alias("batch_id"), F.current_timestamp().alias("ingest_ts"),
     ).dropDuplicates(["id_alerta", "rule_version"])

@@ -97,6 +97,14 @@ table dim_tiempo
 
 		annotation SummarizationSetBy = Automatic
 
+	column zona_horaria
+		dataType: string
+		lineageTag: d5b37a0e-dc0a-4d8d-9840-2d5a201fcb34
+		summarizeBy: none
+		sourceColumn: zona_horaria
+
+		annotation SummarizationSetBy = Automatic
+
 	partition dim_tiempo = m
 		mode: import
 		source =

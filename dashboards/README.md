@@ -2,18 +2,27 @@
 
 **Responsable:** Hellen Yanes Doria · **Par revisor:** Andrés Felipe Vélez Álvarez
 
-Consumo de la capa Gold (RF-14): consultas de Athena para P4–P6 y el tablero de Power BI sobre Athena.
+Consumo de la capa Gold (RF-14): consultas de Athena para P4–P7 y el tablero de Power BI sobre Athena.
 
 | Carpeta | Qué tiene |
 |---|---|
-| `athena/` | SQL de P4, P5 y P6 (los mismos que usa `batch/consultas.py` con Spark SQL en local) |
+| `athena/` | SQL de P4 a P7 (los mismos que usa `batch/consultas.py` con Spark SQL en local) |
 | `powerbi/` | Tablero `FraudLens.pbip` (proyecto de Power BI en archivos de texto: modelo en TMDL y reporte en PBIR) |
 
 ## Tablero de Power BI
 
 Página **FraudLens**: tarjetas (transacciones, alertas, % de transacciones sospechosas y latencia P95), **P4** (matriz de
-tasa de fraude por ciudad del comercio y franja, con degradado de riesgo), **P5** (alertas y latencia por regla) y **P6**
-(top 10 de comercios por monto sospechoso). Usa el tema `FraudLens-tema.json` y un modelo en estrella:
+tasa de alertas por región del pago y franja en hora de Colombia, con degradado de riesgo), **P5** (alertas y latencia
+por regla) y **P6** (top 10 de regiones por monto sospechoso).
+
+Página **Acierto contra la realidad** (P7, filtrada a la partición de **prueba**, el 20 % final que no se usó para
+calibrar ni entrenar): precisión, cobertura, falsos positivos por 1.000 pagos legítimos y fraudes detectados; precisión
+de cada regla (R2, R3, R4) y fraude real por línea de producto.
+
+**Con IEEE-CIS** el "comercio" es la línea de producto de Vesta (W, C, R, H, S) y la región es la de facturación del
+pago (`addr1`), que viaja en `fact_transacciones.region`. La realidad (`es_fraude_real`, `particion_eval`) la cruza
+`batch/gold.py` (paso `etiquetar`) desde `raw/ieee-cis/preparado/etiquetas.csv.gz`; el streaming nunca la ve. En un banco
+serían los contracargos confirmados, que llegan días después. Usa el tema `FraudLens-tema.json` y un modelo en estrella:
 `fact_transacciones` y `fact_alertas` con `dim_comercio`, `dim_tiempo`, `dim_cliente` (solo filas vigentes de la SCD2)
 y `dim_regla`.
 

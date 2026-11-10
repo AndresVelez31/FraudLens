@@ -13,6 +13,19 @@ table fact_alertas
 		formatString: 0.00
 		lineageTag: 9949e84a-4270-499e-ab01-0ee0825e73c7
 
+	measure 'Alertas con etiqueta' = CALCULATE([Alertas], NOT ISBLANK(fact_alertas[es_fraude_real]))
+		formatString: #,0
+		lineageTag: f452caea-e188-4f66-bd1d-d8d65683e843
+
+	/// P7: precisión por regla (R2, R3, R4; R1 marca ventanas y no transacciones)
+	measure 'Precisión de la regla' = DIVIDE(CALCULATE([Alertas], fact_alertas[es_fraude_real] = TRUE()), [Alertas con etiqueta])
+		formatString: 0.00\ %;-0.00\ %;0.00\ %
+		lineageTag: 76b05743-81be-4734-8f84-ce247e0613f6
+
+	measure 'Puntaje promedio' = AVERAGE(fact_alertas[puntaje])
+		formatString: 0.000
+		lineageTag: 9240d8e0-ab82-42e4-8b27-4c854478bd25
+
 	column id_alerta
 		dataType: string
 		lineageTag: ea8ca064-3f31-4e9f-be40-bf9282e56487
@@ -217,6 +230,41 @@ table fact_alertas
 		annotation SummarizationSetBy = Automatic
 
 		annotation UnderlyingDateTimeDataType = Date
+
+	column puntaje
+		dataType: double
+		formatString: 0.000
+		lineageTag: b7b6f09e-0f38-4ff0-a9fb-90a787b26deb
+		summarizeBy: none
+		sourceColumn: puntaje
+
+		annotation SummarizationSetBy = Automatic
+
+	column id_tiempo
+		dataType: int64
+		formatString: 0
+		lineageTag: 05f184f9-aa79-4cef-b46a-5ede037bbf83
+		summarizeBy: none
+		sourceColumn: id_tiempo
+
+		annotation SummarizationSetBy = Automatic
+
+	column es_fraude_real
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 6ca1ad72-5023-46fc-ad50-043d1b52284a
+		summarizeBy: none
+		sourceColumn: es_fraude_real
+
+		annotation SummarizationSetBy = Automatic
+
+	column particion_eval
+		dataType: string
+		lineageTag: 565a21dd-0dea-42c1-827e-9595ecbb432d
+		summarizeBy: none
+		sourceColumn: particion_eval
+
+		annotation SummarizationSetBy = Automatic
 
 	partition fact_alertas = m
 		mode: import

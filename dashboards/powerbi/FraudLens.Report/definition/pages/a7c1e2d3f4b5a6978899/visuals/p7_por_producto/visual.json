@@ -1,0 +1,164 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/item/report/definition/visualContainer/2.14.0/schema.json",
+  "name": "p7_por_producto",
+  "position": {
+    "x": 40,
+    "y": 700,
+    "z": 6,
+    "height": 350,
+    "width": 1840,
+    "tabOrder": 6
+  },
+  "visual": {
+    "visualType": "pivotTable",
+    "query": {
+      "queryState": {
+        "Rows": {
+          "projections": [
+            {
+              "field": {
+                "Column": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "dim_comercio"
+                    }
+                  },
+                  "Property": "id_comercio"
+                }
+              },
+              "queryRef": "dim_comercio.id_comercio",
+              "nativeQueryRef": "Producto",
+              "displayName": "Producto",
+              "active": true
+            }
+          ]
+        },
+        "Values": {
+          "projections": [
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_transacciones"
+                    }
+                  },
+                  "Property": "Transacciones"
+                }
+              },
+              "queryRef": "fact_transacciones.Transacciones",
+              "nativeQueryRef": "Transacciones"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_transacciones"
+                    }
+                  },
+                  "Property": "Fraudes reales"
+                }
+              },
+              "queryRef": "fact_transacciones.Fraudes reales",
+              "nativeQueryRef": "Fraudes reales"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_transacciones"
+                    }
+                  },
+                  "Property": "% fraude real"
+                }
+              },
+              "queryRef": "fact_transacciones.% fraude real",
+              "nativeQueryRef": "% fraude real"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_transacciones"
+                    }
+                  },
+                  "Property": "Aciertos"
+                }
+              },
+              "queryRef": "fact_transacciones.Aciertos",
+              "nativeQueryRef": "Aciertos"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_transacciones"
+                    }
+                  },
+                  "Property": "Falsos positivos"
+                }
+              },
+              "queryRef": "fact_transacciones.Falsos positivos",
+              "nativeQueryRef": "Falsos positivos"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_transacciones"
+                    }
+                  },
+                  "Property": "Precisión"
+                }
+              },
+              "queryRef": "fact_transacciones.Precisión",
+              "nativeQueryRef": "Precisión"
+            },
+            {
+              "field": {
+                "Measure": {
+                  "Expression": {
+                    "SourceRef": {
+                      "Entity": "fact_transacciones"
+                    }
+                  },
+                  "Property": "Cobertura"
+                }
+              },
+              "queryRef": "fact_transacciones.Cobertura",
+              "nativeQueryRef": "Cobertura"
+            }
+          ]
+        }
+      }
+    },
+    "visualContainerObjects": {
+      "title": [
+        {
+          "properties": {
+            "show": {
+              "expr": {
+                "Literal": {
+                  "Value": "true"
+                }
+              }
+            },
+            "text": {
+              "expr": {
+                "Literal": {
+                  "Value": "'P7 · Fraude real y acierto por línea de producto'"
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "drillFilterOtherVisuals": true
+  }
+}

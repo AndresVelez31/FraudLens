@@ -29,7 +29,7 @@ API FastAPI  ◄── DynamoDB      Athena/Metabase (AWS) o `batch.consultas` (
 | Batch y Gold | Spark batch (catálogos, estrella, calidad, reproceso) | `batch/` |
 | Orquestación | Airflow 2.9 (LocalExecutor): `catalogos_diario`, `fraude_pipeline` | `dags/` |
 | Alertas | DynamoDB (+ índices por cliente y por regla), SNS | `common/alerts.py`, `infra/aws/` |
-| Consumo | API FastAPI, consultas P4–P6 (Athena/Spark SQL) | `api/`, `dashboards/athena/`, `batch/consultas.py` |
+| Consumo | API FastAPI, consultas P4–P7 (Athena/Spark SQL) | `api/`, `dashboards/athena/`, `batch/consultas.py` |
 
 ## Reglas de fraude
 
@@ -217,7 +217,7 @@ EventBridge Scheduler; al encenderlas, los contenedores arrancan solos y el stre
 hace falta para reparar las entradas que deja Athena cuando un registro falla.
 
 Athena lee Gold registrado en Glue (`python -m batch.publicar glue`, tarea del DAG `fraude_pipeline`); Power BI se conecta
-a Athena. En local las preguntas P4–P6 se responden con `batch.consultas`.
+a Athena. En local las preguntas P4–P7 se responden con `batch.consultas` (P7: acierto contra el fraude real).
 
 ## Decisiones y diferencias respecto al E1
 
@@ -239,11 +239,11 @@ FraudLens/
 ├── .env.example         ← variables (copiar a .env; nunca subir .env)
 ├── common/              ← núcleo compartido: config, Spark, esquema, PII, reglas, alertas, tablas Delta
 ├── streaming/           ← job de Structured Streaming (Bronze, Silver, R1–R3, alertas)
-├── batch/               ← catálogos, Gold, calidad, reproceso, publicación, consultas P4–P6
+├── batch/               ← catálogos, Gold, calidad, reproceso, publicación, consultas P4–P7
 ├── dags/                ← DAG catalogos_diario y fraude_pipeline
 ├── producer/            ← productor y catálogo sintético (con ground truth)
 ├── api/                 ← API de alertas
-├── dashboards/athena/   ← SQL de P4–P6 (Athena y Spark SQL)
+├── dashboards/athena/   ← SQL de P4–P7 (Athena y Spark SQL)
 ├── infra/               ← Dockerfiles, init.sql de PostgreSQL, creación de recursos AWS
 ├── tests/               ← pytest y prueba end-to-end sin Docker
 └── docs/                ← E1, bitácora de IA, E2 (slides y guía de defensa)
