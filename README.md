@@ -82,6 +82,10 @@ docker compose ps                   # kafka-init y setup quedan en "Exited (0)":
 Con `COMPOSE_FILE` y `COMPOSE_PROFILES` en el `.env`, todos los comandos `docker compose` de este README funcionan sin
 escribir `-f` ni `--profile`.
 
+**Si `setup` o `airflow-init` fallan con `password authentication failed`:** PostgreSQL ya tenía un volumen de una
+corrida anterior, creado con otra `POSTGRES_PASSWORD`. Se arregla con `docker compose down -v` (borra los datos locales)
+y otro `docker compose up -d --build`.
+
 `setup` crea el bucket y la tabla de DynamoDB (solo en local), siembra PostgreSQL (20.000 clientes, 300 comercios + 10 de
 riesgo) y deja la lista de riesgo v1 en `landing/listas_riesgo/`. El streaming arranca solo y queda escuchando el topic
 `transacciones`.
@@ -100,6 +104,10 @@ powershell -ExecutionPolicy Bypass -File scripts\demo.ps1 -SinFallos   # sin el 
 
 **Demo paso a paso (comandos sueltos)**
 
+Con datos sintéticos corren las reglas `v1` con R1 activa, así que también se ve la ventana deslizante de 5 minutos.
+En Windows con **Git Bash**, antepón `MSYS_NO_PATHCONV=1` a los comandos que llevan rutas como `/tmp/...`: si no, Git
+Bash las convierte en rutas de Windows antes de pasarlas al contenedor (en PowerShell o Linux no hace falta).
+
 ```bash
 # 1) Cargar catálogos (Airflow: http://localhost:8081, usuario admin / AIRFLOW_ADMIN_PASSWORD o "admin")
 docker compose exec airflow-scheduler airflow dags trigger catalogos_diario
@@ -117,10 +125,17 @@ docker compose run --rm producer python -m producer.producer --escenario r3
 curl "http://localhost:8080/alertas?regla=R1&limite=5"
 curl "http://localhost:8080/alertas?id_cliente=C0000123"
 
-# 5) Consultas P4–P6 sobre Gold y reproceso con otra versión de reglas
+# 5) Consultas P4–P7 sobre Gold y reproceso con otra versión de reglas
 docker compose run --rm streaming python -m batch.consultas todas
 docker compose run --rm streaming python -m batch.reproceso --desde $(date -u +%F) --hasta $(date -u +%F) --rule-version v2
 ```
+
+Qué esperar con los datos sintéticos:
+- `r2` da exactamente 5 alertas R2.
+- `r3` da 10 alertas: la lista v1 trae a propósito la mitad de los comercios y dispositivos de riesgo, y la v2 suma el
+  resto.
+- P7 sale vacía, porque el acierto se mide contra la etiqueta de fraude real, que solo existe con IEEE-CIS.
+- En P5, las alertas aparecen después de la siguiente corrida de `fraude_pipeline` (cada 10 min).
 
 Consolas: MinIO http://localhost:9001 (lake), Airflow http://localhost:8081, API http://localhost:8080/docs.
 Apagar: `docker compose down` (conserva datos) o `docker compose down -v` (borra todo).
@@ -185,7 +200,7 @@ lista de riesgo v2; calidad; P4–P6; reproceso con v2.
 | Probado | No probado |
 |---|---|
 | **En AWS con datos reales:** 590.540 pagos de IEEE-CIS en ~3 h; Silver con 590.540 filas exactas tras 206 reenvíos del replayer; 28.154 alertas sin repetidas; Gold, Glue, Athena y Power BI; Lambda notificador con su camino de fallos a SQS | Carga sostenida de 5.000 pagos/s (RNF-01): se probó a ~50 pagos/s |
-| **Con Docker local** (3 brokers de Kafka, MinIO, DynamoDB Local, PostgreSQL, Airflow, API): `docker compose up` levanta; alertas, DLQ, API, los dos DAG y P4–P6; con un broker caído el productor no pierde mensajes; `kill -9` al streaming no duplica alertas | Latencia P95 < 30 s con R4 activa (se midió ~202 s; ver abajo) |
+| **Con Docker local, desde un clon limpio siguiendo este README** (11-nov-2026; 3 brokers de Kafka, MinIO, DynamoDB Local, PostgreSQL, Airflow, API): `docker compose up` levanta en menos de 1 min con las imágenes ya construidas; R1 con su ventana de 5 min, R2 5/5 y R3 10/10; DLQ y cuarentena; los dos DAG en verde (~2,5 min por corrida); P4–P7 y reproceso con v2; con un broker caído el productor no pierde mensajes; `kill -9` al streaming no duplica alertas | Latencia P95 < 30 s con R4 activa (se midió ~202 s; ver abajo) |
 | Prueba end-to-end sin Docker con respuestas conocidas (R2 5/5, R1 sin falsos positivos, duplicados, reproceso con v2) y pruebas unitarias (`pytest tests/`) | |
 
 Si algo falla al primer `docker compose up` en su máquina, lo más probable es de empaquetado (red, versión de un jar, permisos de
